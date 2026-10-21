@@ -1,0 +1,34 @@
+import type { AreaStats, Bbox, CityBucket, EventDetail, FreeCheck, MapEvent, MapFilters } from "@/lib/types";
+
+export interface AiUsage {
+  feature: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  costUsd: number;
+}
+
+export interface ScrubHit {
+  eventId: string | null;
+  field: string;
+  matchedText: string;
+  detector: "regex" | "claude";
+  context: "pipeline" | "response";
+}
+
+/** Everything the public site reads or writes. Two backends: demo (seed data in memory) and Supabase. */
+export interface Repo {
+  readonly kind: "demo" | "supabase";
+  freeCheck(args: { lat: number; lng: number; city: string | null; nearM: number; recordTypes: string[] }): Promise<FreeCheck>;
+  mapEvents(bbox: Bbox, f: MapFilters): Promise<MapEvent[]>;
+  cityDecades(f: MapFilters): Promise<CityBucket[]>;
+  eventDetail(id: string, full: boolean, locale: string): Promise<EventDetail | null>;
+  areaStats(county: string, city: string | null, includeNatural: boolean): Promise<AreaStats>;
+  addToWaitlist(row: { email: string; locale: string; county: string | null; referrer: string | null }): Promise<"ok" | "exists">;
+  getAreaSummary(county: string, city: string, locale: string): Promise<{ body: string; statsHash: string } | null>;
+  saveAreaSummary(row: { county: string; city: string; locale: string; body: string; statsHash: string; model: string }): Promise<void>;
+  logScrubHits(hits: ScrubHit[]): Promise<void>;
+  logAiUsage(u: AiUsage): Promise<void>;
+}

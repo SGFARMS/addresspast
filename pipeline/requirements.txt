@@ -1,0 +1,5 @@
+anthropic>=0.70
+supabase>=2.10
+feedparser>=6.0
+requests>=2.32
+pytest>=8.0

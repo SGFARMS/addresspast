@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "title": "AddressPast · Historial de propiedades en Nuevo México",
+    "description": "Consulta gratuita de muertes reportadas y otros registros públicos en o cerca de cualquier dirección de Nuevo México. Con fuentes, calma y transparencia."
+  },
+  "nav": {
+    "areas": "Áreas",
+    "language": "English",
+    "languageLabel": "Switch to English",
+    "themeLight": "Modo claro",
+    "themeDark": "Modo oscuro",
+    "home": "Inicio de AddressPast"
+  },
+  "home": {
+    "headline": "¿Qué pasó aquí?",
+    "sub": "Consulta gratuita de muertes reportadas y otros registros públicos en cualquier dirección de Nuevo México.",
+    "trust": "Consulta gratuita · Fuentes visibles · Piloto en Bernalillo y Valencia",
+    "demoData": "Datos de demostración: todos los registros son ejemplos ficticios para pruebas."
+  },
+  "search": {
+    "label": "Dirección o pregunta",
+    "placeholder": "Escriba una dirección de Nuevo México o haga una pregunta",
+    "submit": "Buscar",
+    "locate": "Usar mi ubicación",
+    "locating": "Buscando su ubicación…",
+    "locateDenied": "Se bloqueó el acceso a la ubicación. Puede escribir una dirección.",
+    "voice": "Buscar por voz",
+    "voiceListening": "Escuchando…",
+    "voiceUnsupported": "La búsqueda por voz no funciona en este navegador.",
+    "noResults": "No hay resultados en Nuevo México. Agregue la ciudad o toque el mapa.",
+    "outsideNm": "Ese punto está fuera de Nuevo México. Por ahora solo cubrimos Nuevo México.",
+    "tapHint": "Consejo: toque cualquier lugar del mapa para consultar ese punto.",
+    "askHint": "Presione Enter para buscar esto como pregunta",
+    "asking": "Leyendo su pregunta…",
+    "suggestions": "Sugerencias de dirección",
+    "clear": "Borrar búsqueda",
+    "examples": "Pruebe: “incendios en Belen antes de 1950” o “algo cerca de Old Town en los últimos 10 años”"
+  },
+  "check": {
+    "heading": "Consulta gratuita",
+    "noneTitle": "No encontramos muertes reportadas en o cerca de esta dirección en nuestros registros.",
+    "noneTitleOther": "No encontramos registros en o cerca de esta dirección en nuestras fuentes.",
+    "atAddress": "{count, plural, =1 {# registro en esta dirección} other {# registros en esta dirección}}",
+    "nearby": "{count, plural, =0 {ninguno a menos de {radius}} =1 {# a menos de {radius}} other {# a menos de {radius}}}",
+    "searched": "Revisamos {sources, plural, =1 {# fuente} other {# fuentes}} de {from} a {to} para el condado de {county}, al {date}.",
+    "searchedGeneric": "Revisamos nuestras fuentes al {date}.",
+    "gapNote": "La cobertura de periódicos de 1964 a 2010 es limitada; la falta de registros no significa que no haya pasado nada.",
+    "naturalHidden": "{count, plural, =1 {# registro por causa natural oculto} other {# registros por causa natural ocultos}} por defecto.",
+    "show": "Mostrar",
+    "hide": "Ocultar",
+    "cityOnly": "{count, plural, =1 {# registro de {city} solo tiene} other {# registros de {city} solo tienen}} la ciudad como ubicación, así que no {count, plural, =1 {lo} other {los}} podemos ubicar en una calle.",
+    "parcel": "Vinculado a la parcela del condado de este lote.",
+    "loading": "Revisando nuestros registros…",
+    "change": "Cambiar",
+    "close": "Cerrar resultados",
+    "noYear": "Año desconocido",
+    "atThisAddress": "En esta dirección",
+    "nearbyHeading": "Cerca"
+  },
+  "record": {
+    "distance": "a {distance}",
+    "confidence": "Confianza de coincidencia",
+    "high": "Coincidencia alta",
+    "medium": "Coincidencia media",
+    "low": "Coincidencia baja",
+    "verified": "Verificado",
+    "verifiedHelp": "Una persona de nuestro equipo comparó este registro con su fuente.",
+    "sources": "{count, plural, =1 {# fuente} other {# fuentes}}",
+    "viewScan": "Ver la página original del periódico",
+    "viewSource": "Ver fuente",
+    "published": "Publicado el {date}",
+    "locked": "El resumen y los enlaces a las fuentes vienen con el informe completo de la propiedad.",
+    "loading": "Cargando registro…",
+    "back": "Volver a los resultados",
+    "reportError": "Reportar un error o pedir que se retire",
+    "reportSoon": "Disponible en la próxima actualización"
+  },
+  "precision": {
+    "street": "Dirección exacta",
+    "street_historic": "Aproximado · calle histórica (~{radius} m)",
+    "intersection": "Aproximado · cruce de calles (~{radius} m)",
+    "landmark": "Aproximado · cerca de un punto de referencia (~{radius} m)",
+    "city": "Solo nivel de ciudad"
+  },
+  "types": {
+    "death": "Muerte reportada",
+    "fire": "Incendio de estructura",
+    "drug_lab": "Antiguo laboratorio de drogas",
+    "flood_zone": "Zona de inundación"
+  },
+  "causes": {
+    "accident": "Accidente",
+    "homicide": "Homicidio",
+    "suicide": "Suicidio",
+    "fire": "Incendio",
+    "natural": "Causas naturales",
+    "unknown": "Causa no indicada"
+  },
+  "filters": {
+    "open": "Filtros",
+    "title": "Filtrar registros",
+    "recordTypes": "Tipos de registro",
+    "causes": "Causa",
+    "allCauses": "Todas las causas",
+    "includeNatural": "Mostrar muertes por causas naturales",
+    "naturalNote": "Desactivado por defecto. La mayoría de las muertes naturales no son lo que preocupa a la gente, y son las más delicadas para las familias.",
+    "minConfidence": "Confianza mínima de coincidencia",
+    "any": "Cualquiera",
+    "verifiedOnly": "Solo registros verificados",
+    "reset": "Restablecer",
+    "done": "Listo",
+    "fromQuestion": "Filtros de su pregunta",
+    "removeChip": "Quitar filtro: {label}",
+    "chipYears": "{from}–{to}",
+    "chipBefore": "Antes de {year}",
+    "chipAfter": "Desde {year}",
+    "chipRadius": "A menos de {distance}",
+    "chipPlace": "Cerca de {place}"
+  },
+  "timeline": {
+    "label": "Años mostrados",
+    "from": "Desde el año",
+    "to": "Hasta el año",
+    "histogram": "Registros por década",
+    "reset": "Todos los años"
+  },
+  "legend": {
+    "title": "Leyenda",
+    "exact": "Dirección exacta",
+    "approx": "Área aproximada",
+    "city": "Registros a nivel de ciudad",
+    "cluster": "Grupo de registros",
+    "searched": "Su búsqueda"
+  },
+  "disclaimer": "Los registros provienen de noticias y archivos públicos. Pueden estar incompletos o equivocados, y esto no es una divulgación legal.",
+  "waitlist": {
+    "eyebrow": "Muy pronto en Nuevo México",
+    "headline": "Conozca lo que pasó aquí antes de mudarse.",
+    "body": "AddressPast revisa archivos de periódicos y registros públicos para encontrar muertes reportadas y otra historia en cualquier dirección de Nuevo México. La consulta es gratuita, cada registro muestra sus fuentes y el tono es tranquilo.",
+    "points": {
+      "free": "Consulta básica gratuita para cada dirección",
+      "sources": "Fuentes y nivel de confianza en cada registro",
+      "map": "Un mapa de todo el vecindario, desde la década de 1860",
+      "spanish": "En inglés y en español"
+    },
+    "sampleLabel": "Resultado de ejemplo (datos ficticios)",
+    "emailLabel": "Correo electrónico",
+    "emailPlaceholder": "usted@ejemplo.com",
+    "countyLabel": "Condado que le interesa (opcional)",
+    "countyAny": "Cualquier condado",
+    "submit": "Unirme a la lista de espera",
+    "sending": "Guardando…",
+    "ok": "Ya está en la lista. Le avisaremos por correo cuando abramos.",
+    "exists": "Ya estaba en la lista. ¡Gracias!",
+    "error": "Algo salió mal. Inténtelo de nuevo.",
+    "privacy": "Solo le escribiremos sobre el lanzamiento. Sin spam y sin compartir su correo."
+  },
+  "area": {
+    "title": "Historial de propiedades en {area}, Nuevo México",
+    "description": "Registros públicos agregados de {area}: muertes reportadas por década y categoría, con fuentes y notas de cobertura.",
+    "total": "{count, plural, =1 {# registro} other {# registros}}",
+    "verified": "{count} verificados",
+    "byDecade": "Registros por década",
+    "byCause": "Por categoría",
+    "byPrecision": "Precisión de la ubicación",
+    "coverage": "Cobertura",
+    "coverageText": "{sources, plural, =1 {# fuente} other {# fuentes}}, {from}–{to}",
+    "noCoverage": "Aún sin cobertura",
+    "aggregateNote": "Esta página solo muestra totales. Para revisar una dirección, use la consulta gratuita.",
+    "checkAddress": "Consultar una dirección en {area}",
+    "cities": "Ciudades",
+    "counties": "Áreas que cubrimos",
+    "aiNote": "Resumen escrito por IA a partir de los totales. Nunca ve registros individuales.",
+    "naturalExcluded": "Las muertes por causas naturales no se incluyen en estos totales."
+  },
+  "footer": {
+    "pilot": "Piloto: condados de Bernalillo y Valencia, Nuevo México.",
+    "contact": "Contacto",
+    "rights": "Imágenes de periódicos históricos cortesía de la Biblioteca del Congreso, Chronicling America."
+  },
+  "errors": {
+    "generic": "Algo salió mal. Inténtelo de nuevo.",
+    "rateLimited": "Demasiadas búsquedas en poco tiempo. Espere un minuto.",
+    "geocoder": "La búsqueda de direcciones tiene problemas. Inténtelo de nuevo o toque el mapa."
+  }
+}

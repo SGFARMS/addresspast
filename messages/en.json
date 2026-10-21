@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "title": "AddressPast · New Mexico property history",
+    "description": "Free check for reported deaths and other public records at or near any New Mexico address. Sourced, calm, and transparent."
+  },
+  "nav": {
+    "areas": "Areas",
+    "language": "Español",
+    "languageLabel": "Cambiar a español",
+    "themeLight": "Light mode",
+    "themeDark": "Dark mode",
+    "home": "AddressPast home"
+  },
+  "home": {
+    "headline": "What happened here?",
+    "sub": "Free check for reported deaths and other public records at any New Mexico address.",
+    "trust": "Free check · Sources shown · Bernalillo & Valencia pilot",
+    "demoData": "Demo data: all records shown are fake samples for testing."
+  },
+  "search": {
+    "label": "Address or question",
+    "placeholder": "Enter a New Mexico address, or ask a question",
+    "submit": "Search",
+    "locate": "Use my location",
+    "locating": "Finding your location…",
+    "locateDenied": "Location access was blocked. You can type an address instead.",
+    "voice": "Search by voice",
+    "voiceListening": "Listening…",
+    "voiceUnsupported": "Voice search isn't supported in this browser.",
+    "noResults": "No New Mexico matches. Try adding the city, or tap the map.",
+    "outsideNm": "That point is outside New Mexico. We only cover New Mexico for now.",
+    "tapHint": "Tip: tap anywhere on the map to check that spot.",
+    "askHint": "Press Enter to search this as a question",
+    "asking": "Reading your question…",
+    "suggestions": "Address suggestions",
+    "clear": "Clear search",
+    "examples": "Try: “fires in Belen before 1950” or “anything near Old Town in the last 10 years”"
+  },
+  "check": {
+    "heading": "Free check",
+    "noneTitle": "No reported deaths found at or near this address in our records.",
+    "noneTitleOther": "No records found at or near this address in our sources.",
+    "atAddress": "{count, plural, =1 {# record at this address} other {# records at this address}}",
+    "nearby": "{count, plural, =0 {none within {radius}} =1 {# within {radius}} other {# within {radius}}}",
+    "searched": "We searched {sources, plural, =1 {# source} other {# sources}} covering {from}–{to} for {county} County, as of {date}.",
+    "searchedGeneric": "Searched our sources as of {date}.",
+    "gapNote": "Newspaper coverage from 1964–2010 is thin, so missing records don't mean nothing happened.",
+    "naturalHidden": "{count, plural, =1 {# natural-cause record} other {# natural-cause records}} hidden by default.",
+    "show": "Show",
+    "hide": "Hide",
+    "cityOnly": "{count, plural, =1 {# {city} record has} other {# {city} records have}} only a city-level location, so we can't place {count, plural, =1 {it} other {them}} on a street.",
+    "parcel": "Matched to the county parcel for this lot.",
+    "loading": "Checking our records…",
+    "change": "Change",
+    "close": "Close results",
+    "noYear": "Year unknown",
+    "atThisAddress": "At this address",
+    "nearbyHeading": "Nearby"
+  },
+  "record": {
+    "distance": "{distance} away",
+    "confidence": "Match confidence",
+    "high": "High match",
+    "medium": "Medium match",
+    "low": "Low match",
+    "verified": "Verified",
+    "verifiedHelp": "A person on our team checked this record against its source.",
+    "sources": "{count, plural, =1 {# source} other {# sources}}",
+    "viewScan": "View original newspaper page",
+    "viewSource": "View source",
+    "published": "Published {date}",
+    "locked": "The summary and source links come with the full property report.",
+    "loading": "Loading record…",
+    "back": "Back to results",
+    "reportError": "Report an error or request removal",
+    "reportSoon": "Coming in the next update"
+  },
+  "precision": {
+    "street": "Exact address",
+    "street_historic": "Approximate · historic street (~{radius} m)",
+    "intersection": "Approximate · intersection (~{radius} m)",
+    "landmark": "Approximate · near a landmark (~{radius} m)",
+    "city": "City-level only"
+  },
+  "types": {
+    "death": "Reported death",
+    "fire": "Structure fire",
+    "drug_lab": "Former drug lab site",
+    "flood_zone": "Flood zone"
+  },
+  "causes": {
+    "accident": "Accident",
+    "homicide": "Homicide",
+    "suicide": "Suicide",
+    "fire": "Fire",
+    "natural": "Natural causes",
+    "unknown": "Cause not stated"
+  },
+  "filters": {
+    "open": "Filters",
+    "title": "Filter records",
+    "recordTypes": "Record types",
+    "causes": "Cause",
+    "allCauses": "All causes",
+    "includeNatural": "Show natural-cause deaths",
+    "naturalNote": "Off by default. Most natural deaths aren't what people are worried about, and they're the most sensitive for families.",
+    "minConfidence": "Minimum match confidence",
+    "any": "Any",
+    "verifiedOnly": "Verified records only",
+    "reset": "Reset",
+    "done": "Done",
+    "fromQuestion": "Filters from your question",
+    "removeChip": "Remove filter: {label}",
+    "chipYears": "{from}–{to}",
+    "chipBefore": "Before {year}",
+    "chipAfter": "Since {year}",
+    "chipRadius": "Within {distance}",
+    "chipPlace": "Near {place}"
+  },
+  "timeline": {
+    "label": "Years shown",
+    "from": "From year",
+    "to": "To year",
+    "histogram": "Records per decade",
+    "reset": "All years"
+  },
+  "legend": {
+    "title": "Legend",
+    "exact": "Exact address",
+    "approx": "Approximate area",
+    "city": "City-level records",
+    "cluster": "Group of records",
+    "searched": "Your search"
+  },
+  "disclaimer": "Records come from public news and archives. They may be incomplete or wrong, and this is not a legal disclosure.",
+  "waitlist": {
+    "eyebrow": "Coming soon to New Mexico",
+    "headline": "Know what happened here before you move in.",
+    "body": "AddressPast checks public newspaper archives and records for reported deaths and other history at any New Mexico address. It's free to check, every record shows its sources, and the tone stays calm.",
+    "points": {
+      "free": "Free basic check for every address",
+      "sources": "Sources and confidence on every record",
+      "map": "A map of the whole neighborhood, back to the 1860s",
+      "spanish": "English and Spanish"
+    },
+    "sampleLabel": "Sample result (fake data)",
+    "emailLabel": "Email address",
+    "emailPlaceholder": "you@example.com",
+    "countyLabel": "County you care about (optional)",
+    "countyAny": "Any county",
+    "submit": "Join the waitlist",
+    "sending": "Saving…",
+    "ok": "You're on the list. We'll email you when we launch.",
+    "exists": "You're already on the list. Thanks!",
+    "error": "Something went wrong. Please try again.",
+    "privacy": "We'll only email you about the launch. No spam, no sharing."
+  },
+  "area": {
+    "title": "Property history in {area}, New Mexico",
+    "description": "Aggregate public records for {area}: reported deaths by decade and category, with sources and coverage notes.",
+    "total": "{count, plural, =1 {# record} other {# records}}",
+    "verified": "{count} verified",
+    "byDecade": "Records by decade",
+    "byCause": "By category",
+    "byPrecision": "Location precision",
+    "coverage": "Coverage",
+    "coverageText": "{sources, plural, =1 {# source} other {# sources}}, {from}–{to}",
+    "noCoverage": "No coverage yet",
+    "aggregateNote": "This page shows totals only. To check a specific address, use the free check.",
+    "checkAddress": "Check an address in {area}",
+    "cities": "Cities",
+    "counties": "Areas we cover",
+    "aiNote": "Overview written by AI from the totals above. It never sees individual records.",
+    "naturalExcluded": "Natural-cause deaths are excluded from these totals."
+  },
+  "footer": {
+    "pilot": "Pilot: Bernalillo and Valencia counties, New Mexico.",
+    "contact": "Contact",
+    "rights": "Historic newspaper scans courtesy of the Library of Congress, Chronicling America."
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "rateLimited": "Too many searches in a short time. Please wait a minute.",
+    "geocoder": "Address lookup is having trouble. Try again, or tap the map."
+  }
+}

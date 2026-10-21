@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Warm-paper palette: adobe + sage, one calm accent. All text pairs meet WCAG AA. */
+:root {
+  --bg: #f6f2ea;
+  --surface: #fffdf9;
+  --surface-2: #efe8dd;
+  --ink: #29241f;
+  --ink-2: #5b5249;
+  --ink-3: #7a7067;
+  --line: #e0d6c8;
+  --accent: #3d6957;
+  --accent-ink: #ffffff;
+  --accent-soft: #dde8e0;
+  --adobe: #a35f3d;
+  --adobe-soft: #f4e3d7;
+  --focus: #2f6fb3;
+  --shadow: 0 1px 2px rgb(41 36 31 / 0.06), 0 8px 24px -8px rgb(41 36 31 / 0.18);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #161412;
+  --surface: #201d1a;
+  --surface-2: #2a2622;
+  --ink: #efe9e1;
+  --ink-2: #bdb3a8;
+  --ink-3: #9a9085;
+  --line: #3a3430;
+  --accent: #8fbaa4;
+  --accent-ink: #13201a;
+  --accent-soft: #233a30;
+  --adobe: #dc9d78;
+  --adobe-soft: #3b2a20;
+  --focus: #8ab8ec;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 28px -10px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-adobe: var(--adobe);
+  --color-adobe-soft: var(--adobe-soft);
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-display), ui-serif, Georgia, serif;
+  --shadow-card: var(--shadow);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  * { scroll-behavior: auto !important; }
+}
+
+/* Dual-thumb range for the timeline */
+.range-dual {
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+}
+.range-dual::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow);
+  cursor: grab;
+}
+.range-dual::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  cursor: grab;
+}
+.range-dual::-webkit-slider-runnable-track { background: transparent; }
+.range-dual::-moz-range-track { background: transparent; }
+.range-dual:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* MapLibre controls in our palette */
+.maplibregl-ctrl-group {
+  background: var(--surface) !important;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(0.9); }
+.maplibregl-ctrl-attrib { font-size: 11px; }
+.dark .maplibregl-ctrl-attrib { background: rgb(32 29 26 / 0.8) !important; color: var(--ink-2); }
+.dark .maplibregl-ctrl-attrib a { color: var(--ink-2); }

@@ -1,0 +1,55 @@
+# Data pipeline schedule (times are UTC; New Mexico is UTC-6 in summer, UTC-7 in winter).
+# Runs on GitHub Actions instead of Vercel Cron: Python-native, no function timeouts.
+name: pipeline
+
+on:
+  schedule:
+    - cron: "7 12 * * *"   # daily ~6am MT: RSS harvest → geocode → historic suggestions
+    - cron: "37 8 * * *"   # nightly ~2am MT: dedupe → translate → parcel match
+    - cron: "17 */3 * * *" # every 3h: collect finished Message Batches
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "harvest | nightly | batches"
+        required: true
+        default: nightly
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      AP_MAX_RUN_COST_USD: "5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+      - run: pip install -r pipeline/requirements.txt
+
+      - name: Daily harvest
+        if: github.event.schedule == '7 12 * * *' || inputs.job == 'harvest'
+        run: |
+          if [ -f pipeline/harvest.py ]; then python -m pipeline.harvest --rss; else echo "harvest.py not in repo yet"; fi
+          if [ -f pipeline/geocode.py ]; then python -m pipeline.geocode; else echo "geocode.py not in repo yet"; fi
+          python -m pipeline.historic_geo --limit 100
+
+      - name: Nightly dedupe
+        if: github.event.schedule == '37 8 * * *' || inputs.job == 'nightly'
+        run: |
+          python -m pipeline.dedupe --limit 500
+          python -m pipeline.translate --limit 500
+          python -m pipeline.parcels match
+
+      - name: Collect batches
+        if: github.event.schedule == '17 */3 * * *' || inputs.job == 'batches'
+        run: python -m pipeline.batches poll
