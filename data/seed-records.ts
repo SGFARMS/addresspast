@@ -253,7 +253,7 @@ export function combineConfidence(cs: number[]) {
 }
 
 export const SEED_RECORDS: SeedRecord[] = rows.map(
-  ([n, anchor, dLat, dLng, year, recordType, cause, precision, verified, summary, summaryEs, sources]) => {
+  ([n, anchor, dLat, dLng, year, recordType, cause, precision, verified, summary, summaryEs, sources]): SeedRecord => {
     const [lat, lng] = P[anchor];
     const [city, county] = CITY[anchor];
     return {

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import maplibregl, { type GeoJSONSource, type Map as MLMap } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+type GeoJSONSource = maplibregl.GeoJSONSource;
+type MLMap = maplibregl.Map;
 import "maplibre-gl/dist/maplibre-gl.css";
 import { siteConfig } from "@/site.config";
 import { circleRing } from "@/lib/geo";
@@ -183,7 +185,7 @@ export default function PropertyMap(props: Props) {
       if (top?.layer.id === "clusters") {
         const src = map.getSource("exact") as GeoJSONSource;
         const zoom = await src.getClusterExpansionZoom(top.properties.cluster_id as number);
-        map.easeTo({ center: (top.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
+        map.easeTo({ center: (top.geometry as unknown as { coordinates: [number, number] }).coordinates, zoom });
         return;
       }
       if (top?.properties?.id) {
