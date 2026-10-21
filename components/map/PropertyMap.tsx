@@ -11,7 +11,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { siteConfig } from "@/site.config";
 import { circleRing } from "@/lib/geo";
 import { isApproximate } from "@/lib/format";
-import type { Bbox, CityBucket, MapEvent, RecordType } from "@/lib/types";
+import { CAUSES, RECORD_TYPES, type Bbox, type CityBucket, type MapEvent, type RecordType } from "@/lib/types";
 import { TYPE_SHAPES, markerColor } from "@/components/records/bits";
 
 export interface MapLabels {
@@ -117,13 +117,20 @@ export default function PropertyMap(props: Props) {
     map.getCanvas().setAttribute("aria-label", props.labels.region);
     map.getCanvas().setAttribute("role", "region");
 
-    map.on("styleimagemissing", (e) => {
-      const [prefix, shape, color, fill] = e.id.split("|");
-      if (prefix !== "ap" || map.hasImage(e.id)) return;
-      map.addImage(e.id, makeIcon(shape as Shape, color, fill === "h"), { pixelRatio: 2 });
-    });
+    // Pre-register every marker icon (shape × color × filled/hollow). Re-run after each style swap.
+    const addIcons = () => {
+      const combos = new Set<string>();
+      for (const c of CAUSES) for (const h of [false, true]) combos.add(iconId("death", markerColor("death", c), h));
+      for (const t of RECORD_TYPES) for (const h of [false, true]) combos.add(iconId(t, markerColor(t, "unknown"), h));
+      for (const id of combos) {
+        if (map.hasImage(id)) continue;
+        const [, shape, color, fill] = id.split("|");
+        map.addImage(id, makeIcon(shape as Shape, color, fill === "h"), { pixelRatio: 2 });
+      }
+    };
 
     const addLayers = () => {
+      addIcons();
       const empty = { type: "FeatureCollection" as const, features: [] };
       if (!map.getSource("search")) {
         map.addSource("search", { type: "geojson", data: empty });
@@ -286,5 +293,9 @@ export default function PropertyMap(props: Props) {
     map.setLayoutProperty("approx-icon", "icon-size", ["case", ["==", ["get", "id"], id], 1.3, 0.9]);
   }, [props.selectedId]);
 
-  return <div ref={container} className="absolute inset-0" />;
+  return (
+    <div className="absolute inset-0">
+      <div ref={container} className="h-full w-full" />
+    </div>
+  );
 }
