@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LoaderCircle, LocateFixed, MapPin, Mic, Search, X } from "lucide-react";
+import { ArrowRight, LoaderCircle, LocateFixed, MapPin, Mic, Search, X } from "lucide-react";
 import { siteConfig } from "@/site.config";
 import { track } from "@/lib/analytics";
 import type { Place } from "@/lib/types";
@@ -46,6 +46,7 @@ export function SearchBox({ onPlace, onAsk, onLocate, busy, initial = "" }: Prop
   const inputRef = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const recog = useRef<InstanceType<SpeechCtor> | null>(null);
+  const justChose = useRef(false);
 
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: SpeechCtor; webkitSpeechRecognition?: SpeechCtor };
@@ -55,6 +56,10 @@ export function SearchBox({ onPlace, onAsk, onLocate, busy, initial = "" }: Prop
   // Debounced autocomplete through our cached server route
   useEffect(() => {
     const text = q.trim();
+    if (justChose.current) {
+      justChose.current = false;
+      return;
+    }
     if (text.length < 3 || looksLikeQuestion(text)) {
       setItems([]);
       setLoading(false);
@@ -82,6 +87,8 @@ export function SearchBox({ onPlace, onAsk, onLocate, busy, initial = "" }: Prop
   }, [q, t]);
 
   const choose = (p: Place) => {
+    justChose.current = true;
+    abort.current?.abort();
     setQ(p.label);
     setOpen(false);
     setItems([]);
@@ -138,7 +145,7 @@ export function SearchBox({ onPlace, onAsk, onLocate, busy, initial = "" }: Prop
         <label htmlFor={`${listId}-input`} className="sr-only">
           {t("label")}
         </label>
-        <Search size={20} className="ml-2 shrink-0 text-ink-3" aria-hidden />
+        <Search size={20} className="ml-1.5 shrink-0 text-ink-3" aria-hidden />
         <input
           ref={inputRef}
           id={`${listId}-input`}
@@ -150,6 +157,7 @@ export function SearchBox({ onPlace, onAsk, onLocate, busy, initial = "" }: Prop
           value={q}
           placeholder={t("placeholder")}
           onChange={(e) => {
+            justChose.current = false;
             setQ(e.target.value);
             setOpen(true);
           }}
@@ -165,7 +173,7 @@ export function SearchBox({ onPlace, onAsk, onLocate, busy, initial = "" }: Prop
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
-          className="min-w-0 flex-1 bg-transparent px-2 py-2.5 text-base text-ink placeholder:text-ink-3 focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent px-1.5 py-2.5 text-base text-ink placeholder:text-ink-3 focus:outline-none"
         />
         {(loading || busy) && <LoaderCircle size={18} className="shrink-0 animate-spin text-ink-3" aria-hidden />}
         {q && !busy && (
@@ -187,8 +195,8 @@ export function SearchBox({ onPlace, onAsk, onLocate, busy, initial = "" }: Prop
         <button type="button" onClick={onLocate} aria-label={t("locate")} title={t("locate")} className="rounded-lg p-2 text-ink-2 hover:bg-surface-2 hover:text-ink">
           <LocateFixed size={18} aria-hidden />
         </button>
-        <button type="submit" className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-ink hover:opacity-90">
-          {t("submit")}
+        <button type="submit" aria-label={t("submit")} title={t("submit")} className="rounded-xl bg-accent p-2.5 text-accent-ink hover:opacity-90">
+          <ArrowRight size={18} aria-hidden />
         </button>
       </form>
 
