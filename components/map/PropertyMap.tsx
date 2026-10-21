@@ -4,6 +4,9 @@ import { useEffect, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 type GeoJSONSource = maplibregl.GeoJSONSource;
 type MLMap = maplibregl.Map;
+
+// MapLibre v6 is ESM-only; bundlers need the worker URL set once (Turbopack/Next pattern from the MapLibre docs).
+maplibregl.setWorkerUrl(new URL("maplibre-gl/dist/maplibre-gl-worker.mjs", import.meta.url).toString());
 import "maplibre-gl/dist/maplibre-gl.css";
 import { siteConfig } from "@/site.config";
 import { circleRing } from "@/lib/geo";
