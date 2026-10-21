@@ -46,9 +46,9 @@ def describe(r: dict) -> str:
 
 
 def ensure_events(run) -> list[dict]:
-    rows = db().table("incidents").select(FIELDS).is_("event_id", "null").eq("hidden", False).limit(5000).execute().data
+    rows = db().table("ap_incidents").select(FIELDS).is_("event_id", "null").eq("hidden", False).limit(5000).execute().data
     for r in rows:
-        ev = db().table("events").insert({
+        ev = db().table("ap_events").insert({
             "record_type": r.get("record_type") or "death",
             "cause_category": r.get("cause_category") or "unknown",
             "event_year": r.get("incident_year"),
@@ -56,8 +56,8 @@ def ensure_events(run) -> list[dict]:
             "county": r.get("county"),
             "summary": r.get("summary"),
         }).execute().data[0]
-        db().table("incidents").update({"event_id": ev["id"]}).eq("id", r["id"]).execute()
-        db().rpc("refresh_event", {"p_event_id": ev["id"]}).execute()
+        db().table("ap_incidents").update({"event_id": ev["id"]}).eq("id", r["id"]).execute()
+        db().rpc("ap_refresh_event", {"p_event_id": ev["id"]}).execute()
         r["event_id"] = ev["id"]
         run.items_in += 1
     return rows
@@ -66,18 +66,18 @@ def ensure_events(run) -> list[dict]:
 def merge(keep_event: str, drop_event: str):
     if keep_event == drop_event:
         return
-    db().table("incidents").update({"event_id": keep_event}).eq("event_id", drop_event).execute()
-    db().table("events").delete().eq("id", drop_event).execute()
-    db().rpc("refresh_event", {"p_event_id": keep_event}).execute()
+    db().table("ap_incidents").update({"event_id": keep_event}).eq("event_id", drop_event).execute()
+    db().table("ap_events").delete().eq("id", drop_event).execute()
+    db().rpc("ap_refresh_event", {"p_event_id": keep_event}).execute()
 
 
 def main(limit: int):
     with PipelineRun("dedupe") as run:
         fresh = ensure_events(run)[:limit]
         for r in fresh:
-            cands = db().rpc("dedupe_candidates", {"p_incident_id": r["id"]}).execute().data or []
+            cands = db().rpc("ap_dedupe_candidates", {"p_incident_id": r["id"]}).execute().data or []
             for c in cands:
-                other = db().table("incidents").select(FIELDS).eq("id", c["candidate_id"]).single().execute().data
+                other = db().table("ap_incidents").select(FIELDS).eq("id", c["candidate_id"]).single().execute().data
                 msg = client.messages.create(
                     model=MODEL_SMART,
                     max_tokens=200,
@@ -89,14 +89,14 @@ def main(limit: int):
                 run.ai("dedupe", MODEL_SMART, msg.usage)
                 d = next(b for b in msg.content if b.type == "tool_use").input
                 a, b = sorted([r["id"], other["id"]])
-                db().table("dedupe_checks").upsert({
+                db().table("ap_dedupe_checks").upsert({
                     "incident_a": a, "incident_b": b, "same_event": d["same_event"], "rationale": d.get("rationale"), "model": MODEL_SMART,
                 }).execute()
                 if d["same_event"] and other.get("event_id"):
                     merge(other["event_id"], r["event_id"])
                     r["event_id"] = other["event_id"]
                     run.items_out += 1
-        db().rpc("refresh_area_coverage", {}).execute()
+        db().rpc("ap_refresh_area_coverage", {}).execute()
 
 
 if __name__ == "__main__":

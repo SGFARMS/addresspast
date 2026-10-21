@@ -19,7 +19,7 @@ Return only the translation."""
 
 
 def main(limit: int):
-    rows = db().table("events").select("id,summary").is_("summary_es", "null").not_.is_("summary", "null").eq("hidden", False).limit(limit).execute().data
+    rows = db().table("ap_events").select("id,summary").is_("summary_es", "null").not_.is_("summary", "null").eq("hidden", False).limit(limit).execute().data
     with PipelineRun("translate") as run:
         for r in rows:
             run.items_in += 1
@@ -33,7 +33,7 @@ def main(limit: int):
             run.ai("translate", MODEL_FAST, msg.usage)
             es, _ = scrub_names("".join(b.text for b in msg.content if b.type == "text").strip())
             if es:
-                db().table("events").update({"summary_es": es}).eq("id", r["id"]).execute()
+                db().table("ap_events").update({"summary_es": es}).eq("id", r["id"]).execute()
                 run.items_out += 1
 
 

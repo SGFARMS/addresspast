@@ -80,8 +80,8 @@ def write_items(page: dict, items: list[dict]) -> int:
             "source_language": lang,
         })
     if rows:
-        db().table("incidents").upsert(rows, on_conflict="source_url,address_raw", ignore_duplicates=True).execute()
-    db().table("scanned_pages").upsert({"url": page["url"]}).execute()
+        db().table("ap_incidents").upsert(rows, on_conflict="source_url,address_raw", ignore_duplicates=True).execute()
+    db().table("ap_scanned_pages").upsert({"url": page["url"]}).execute()
     return len(rows)
 
 
@@ -104,7 +104,7 @@ def submit(path: str, chunk: int = 5000):
 
 
 def poll():
-    pending = db().table("pipeline_runs").select("id,batch_id").eq("job", "harvest_historic").eq("status", "running").execute().data
+    pending = db().table("ap_pipeline_runs").select("id,batch_id").eq("job", "harvest_historic").eq("status", "running").execute().data
     for row in pending:
         batch = client.messages.batches.retrieve(row["batch_id"])
         if batch.processing_status != "ended":
@@ -129,7 +129,7 @@ def poll():
                 if block and page:
                     written += write_items(page, block.input.get("items", []))
             run.items_out = written
-        db().table("pipeline_runs").update({"status": "ok", "items_out": written}).eq("id", row["id"]).execute()
+        db().table("ap_pipeline_runs").update({"status": "ok", "items_out": written}).eq("id", row["id"]).execute()
         print(batch.id, "wrote", written)
 
 

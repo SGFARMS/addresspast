@@ -8,7 +8,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { SEED_RECORDS, combineConfidence } from "../data/seed-records";
 
-const url = process.env.SUPABASE_URL;
+const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) {
   console.error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (e.g. in .env.local) first.");
@@ -21,11 +21,11 @@ async function main() {
   const ids = SEED_RECORDS.map((r) => r.id);
 
   if (reset) {
-    await db.from("incidents").delete().in("event_id", ids);
-    await db.from("events").delete().in("id", ids);
+    await db.from("ap_incidents").delete().in("event_id", ids);
+    await db.from("ap_events").delete().in("id", ids);
     console.log("Removed previous seed rows.");
   } else {
-    const { count } = await db.from("events").select("id", { count: "exact", head: true }).in("id", ids);
+    const { count } = await db.from("ap_events").select("id", { count: "exact", head: true }).in("id", ids);
     if (count) {
       console.log(`Already seeded (${count} events). Use --reset to reload.`);
       return;
@@ -48,7 +48,7 @@ async function main() {
     source_count: new Set(r.sources.map((s) => s.name)).size,
     verified: r.verified,
   }));
-  const { error: e1 } = await db.from("events").insert(events);
+  const { error: e1 } = await db.from("ap_events").insert(events);
   if (e1) throw e1;
 
   const incidents = SEED_RECORDS.flatMap((r) =>
@@ -76,15 +76,15 @@ async function main() {
       summary_scrubbed: true,
     })),
   );
-  const { error: e2 } = await db.from("incidents").insert(incidents);
+  const { error: e2 } = await db.from("ap_incidents").insert(incidents);
   if (e2) throw e2;
 
   // Coverage view feeds the free-check footnote
-  await db.rpc("refresh_area_coverage").then(
+  await db.rpc("ap_refresh_area_coverage").then(
     () => undefined,
-    () => console.warn("Run `refresh materialized view public.area_coverage;` in the SQL editor to update coverage."),
+    () => console.warn("Run `refresh materialized view public.ap_area_coverage;` in the SQL editor to update coverage."),
   );
-  await db.from("pipeline_runs").insert({ job: "seed", trigger: "manual", status: "ok", finished_at: new Date().toISOString(), items_out: events.length });
+  await db.from("ap_pipeline_runs").insert({ job: "seed", trigger: "manual", status: "ok", finished_at: new Date().toISOString(), items_out: events.length });
 
   console.log(`Seeded ${events.length} events and ${incidents.length} source rows (all fake).`);
 }

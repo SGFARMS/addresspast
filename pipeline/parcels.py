@@ -44,17 +44,17 @@ def load(county: str, path: str, apn_field: str, situs_field: str | None, chunk:
             })
             run.items_in += 1
             if len(batch) >= chunk:
-                db().table("parcels").upsert(batch).execute()
+                db().table("ap_parcels").upsert(batch).execute()
                 run.items_out += len(batch)
                 batch = []
         if batch:
-            db().table("parcels").upsert(batch).execute()
+            db().table("ap_parcels").upsert(batch).execute()
             run.items_out += len(batch)
 
 
 def match():
     with PipelineRun("parcel_match") as run:
-        n = db().rpc("match_incident_parcels", {}).execute().data
+        n = db().rpc("ap_match_incident_parcels", {}).execute().data
         run.items_out = int(n or 0)
         print("matched", n)
 

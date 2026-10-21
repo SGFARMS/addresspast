@@ -34,7 +34,7 @@ class PipelineRun:
         self.status = "ok"
 
     def __enter__(self):
-        row = db().table("pipeline_runs").insert({"job": self.job, "trigger": self.trigger, "meta": self.meta}).execute()
+        row = db().table("ap_pipeline_runs").insert({"job": self.job, "trigger": self.trigger, "meta": self.meta}).execute()
         self.id = row.data[0]["id"]
         return self
 
@@ -43,7 +43,7 @@ class PipelineRun:
         self.cost += c
         self.tokens_in += getattr(usage, "input_tokens", 0) or 0
         self.tokens_out += getattr(usage, "output_tokens", 0) or 0
-        db().table("ai_usage").insert({
+        db().table("ap_ai_usage").insert({
             "feature": feature,
             "model": model,
             "input_tokens": getattr(usage, "input_tokens", 0) or 0,
@@ -66,7 +66,7 @@ class PipelineRun:
         elif exc_type is not None:
             self.status = "error"
             err = "".join(traceback.format_exception(exc_type, exc, tb))[-4000:]
-        db().table("pipeline_runs").update({
+        db().table("ap_pipeline_runs").update({
             "status": self.status,
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "items_in": self.items_in,

@@ -51,7 +51,7 @@ export const supabaseRepo: Repo = {
   kind: "supabase",
 
   async freeCheck({ lat, lng, city, nearM, recordTypes }) {
-    const d = await rpc<any>("api_free_check", {
+    const d = await rpc<any>("ap_api_free_check", {
       p_lat: lat, p_lng: lng, p_city: city, p_near_m: nearM, p_record_types: recordTypes,
     });
     const r: FreeCheck = {
@@ -66,8 +66,8 @@ export const supabaseRepo: Repo = {
   },
 
   async mapEvents([w, s, e, n], f) {
-    const rows = await rpc<any[]>("api_map_events", {
-      p_west: w, p_south: s, p_east: e, p_north: n, p_year_from: 1500, p_year_to: 2200, ...filterArgs(f),
+    const rows = await rpc<any[]>("ap_api_map_events", {
+      p_west: w, p_south: s, p_east: e, p_north: n, ...filterArgs(f),
     });
     return rows.map<MapEvent>((x) => ({
       id: x.id,
@@ -84,14 +84,14 @@ export const supabaseRepo: Repo = {
   },
 
   async cityDecades(f) {
-    const rows = await rpc<any[]>("api_city_decades", filterArgs(f));
+    const rows = await rpc<any[]>("ap_api_city_decades", filterArgs(f));
     return rows.map<CityBucket>((x) => ({
       county: x.county, city: x.city, decade: x.decade, n: Number(x.n), lng: x.lng, lat: x.lat,
     }));
   },
 
   async eventDetail(id, full, locale) {
-    const d = await rpc<any>("api_event_detail", { p_event_id: id, p_full: full, p_locale: locale });
+    const d = await rpc<any>("ap_api_event_detail", { p_event_id: id, p_full: full, p_locale: locale });
     if (!d) return null;
     const r: EventDetail = {
       id: d.id,
@@ -114,7 +114,7 @@ export const supabaseRepo: Repo = {
   },
 
   async areaStats(county, city, includeNatural) {
-    const d = await rpc<any>("api_area_stats", { p_county: county, p_city: city, p_include_natural: includeNatural });
+    const d = await rpc<any>("ap_api_area_stats", { p_county: county, p_city: city, p_include_natural: includeNatural });
     const r: AreaStats = {
       total: Number(d.total ?? 0),
       byDecade: d.by_decade ?? {},
@@ -127,7 +127,7 @@ export const supabaseRepo: Repo = {
   },
 
   async addToWaitlist({ email, locale, county, referrer }) {
-    const { error } = await serviceClient().from("waitlist").insert({ email, locale, county, referrer });
+    const { error } = await serviceClient().from("ap_waitlist").insert({ email, locale, county, referrer });
     if (error?.code === "23505") return "exists";
     if (error) throw new Error(error.message);
     return "ok";
@@ -135,7 +135,7 @@ export const supabaseRepo: Repo = {
 
   async getAreaSummary(county, city, locale) {
     const { data } = await serviceClient()
-      .from("area_summaries")
+      .from("ap_area_summaries")
       .select("body, stats_hash")
       .eq("county", county)
       .eq("city", city)
@@ -145,7 +145,7 @@ export const supabaseRepo: Repo = {
   },
 
   async saveAreaSummary(row) {
-    await serviceClient().from("area_summaries").upsert({
+    await serviceClient().from("ap_area_summaries").upsert({
       county: row.county, city: row.city, locale: row.locale, body: row.body,
       stats_hash: row.statsHash, model: row.model, generated_at: new Date().toISOString(),
     });
@@ -153,7 +153,7 @@ export const supabaseRepo: Repo = {
 
   async logScrubHits(hits) {
     if (!hits.length) return;
-    await serviceClient().from("scrub_hits").insert(
+    await serviceClient().from("ap_scrub_hits").insert(
       hits.map((h) => ({
         event_id: h.eventId, field: h.field, matched_text: h.matchedText, detector: h.detector, context: h.context,
       })),
@@ -161,7 +161,7 @@ export const supabaseRepo: Repo = {
   },
 
   async logAiUsage(u) {
-    await serviceClient().from("ai_usage").insert({
+    await serviceClient().from("ap_ai_usage").insert({
       feature: u.feature, model: u.model, input_tokens: u.inputTokens, output_tokens: u.outputTokens,
       cache_read_tokens: u.cacheReadTokens ?? 0, cache_write_tokens: u.cacheWriteTokens ?? 0, cost_usd: u.costUsd,
     });

@@ -5,6 +5,7 @@
 - Live (pre-launch, noindex): https://history.skyhighwebsites.dev
 - Vercel: team `sgfarms-s-projects`, project `nm-property-history`
 - Every site setting lives in [`site.config.ts`](site.config.ts): name, URL, flags, models, pricing, counties, and colors.
+- Database: tenant `addresspast` on the SkyHigh BaaS.
 
 ## Quick start (no accounts needed)
 
@@ -14,26 +15,27 @@ cp .env.example .env.local     # leave everything blank for demo mode
 npm run dev                    # http://localhost:3000
 ```
 
-With no Supabase keys, the app runs on **demo data**: about 40 fake records across Albuquerque, Belen, Los Lunas and Rio Rancho, covering every precision type, record type and decade. A banner says so.
+With no database keys, the app runs on **demo data**: about 40 fake records across Albuquerque, Belen, Los Lunas and Rio Rancho, covering every precision type, record type and decade. A banner says so.
 
 While `launched: false`, the home page is the waitlist. To see the app, set `PREVIEW_SECRET=anything` in `.env.local` and open `/preview?key=anything`. `/preview?off` turns the preview back off.
 
-## Connect Supabase
+## Database: SkyHigh BaaS
 
-1. Create a project, or use your existing one. In **Database → Extensions**, PostGIS is enabled by the migration.
-2. Run the migrations in order, using the SQL editor or `supabase db push`:
-   - `supabase/migrations/20261021000000_base_pipeline_tables.sql`: no-op if your pipeline tables already exist
-   - `supabase/migrations/20261021000100_phase1.sql`
-   > It assumes `incidents.id` is `bigint`. If yours is `uuid`, change the lines marked `[incident-fk]` first.
-3. Put `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and in the Vercel project env.
-   The service key is only used server-side; `lib/supabase/server.ts` imports `server-only`.
-4. Load the fake records: `npm run seed`. Use `npm run seed -- --reset` to reload them. All seed rows have ids `00000000-0000-4000-8000-*`, so they're easy to delete before launch.
-5. **Backups:** turn on daily backups (Pro plan) and, before launch, do one test restore into a scratch project.
+The data lives on your self-hosted Supabase ([skyhighwebsites-baas](https://github.com/SGFARMS/skyhighwebsites-baas)) as tenant `addresspast`. See [`supabase/README.md`](supabase/README.md).
+
+1. Merge the `0026_addresspast_schema.sql` migration in the baas repo, then run **Actions → Droplet ops → `update-baas`** (confirm `RUN`).
+2. Run **Actions → Droplet ops → `connect-tenant-site`** with slug `addresspast`, vercel_project `nm-property-history`, github_repo `addresspast` (confirm `RUN`). That provisions the tenant and writes:
+   - Vercel env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_TENANT_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+   - This repo's Actions secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+3. Redeploy, then load the fake records: put the two values in `.env.local` and run `npm run seed`. Use `npm run seed -- --reset` to reload them. Seed rows have ids `00000000-0000-4000-8000-*`, so they're easy to delete before launch.
+
+The service key is tenant-scoped: rows get `tenant_id` from its claim, and it never reaches the browser (`lib/supabase/server.ts` imports `server-only`).
 
 ### Security model
-- RLS is enabled on every table, and the default is deny. Admins (`profiles.role = 'admin'`) get full access to ops tables.
-- The public never queries tables. Next.js route handlers call `api_*` Postgres functions with the service role, and **only `service_role` can execute them**. Each route is rate-limited per IP.
-- Hidden records are excluded inside every `api_*` function. Hiding an event also deletes its area's cached AI summary (a DB trigger).
+- Every `ap_*` table has RLS enabled and forced, and anon/authenticated have no grants. Only the tenant service key can read or write.
+- The public never queries tables. Next.js route handlers call the `ap_api_*` Postgres functions, which **only `service_role` can execute**. Each route is rate-limited per IP.
+- Hidden records are excluded inside every `ap_api_*` function. Hiding an event also deletes its area's cached AI summary (a DB trigger).
+- Backups and restores use the BaaS runbook (`docs/RUNBOOK.md`, `docs/RESTORE_DRILL.md` in that repo).
 
 ## Optional services
 

@@ -42,7 +42,7 @@ TOOL = {
 
 def main(limit: int):
     rows = (
-        db().table("incidents")
+        db().table("ap_incidents")
         .select("id,address_raw,city,county,incident_year,summary,geocode_status,geocode_precision,location_precision")
         .lt("incident_year", 1960)
         .eq("location_precision", "street_address")
@@ -53,7 +53,7 @@ def main(limit: int):
     )
     with PipelineRun("historic_geo") as run:
         for r in rows:
-            exists = db().table("location_suggestions").select("id").eq("incident_id", r["id"]).limit(1).execute().data
+            exists = db().table("ap_location_suggestions").select("id").eq("incident_id", r["id"]).limit(1).execute().data
             if exists:
                 continue
             run.items_in += 1
@@ -68,7 +68,7 @@ def main(limit: int):
             run.ai("historic_geo", MODEL_SMART, msg.usage)
             s = next(b for b in msg.content if b.type == "tool_use").input
             if s.get("found") and s.get("lat") and s.get("lng"):
-                db().table("location_suggestions").insert({
+                db().table("ap_location_suggestions").insert({
                     "incident_id": r["id"], "suggested_lat": s["lat"], "suggested_lng": s["lng"],
                     "suggested_address": s.get("modern_address"), "rationale": s.get("rationale"), "model": MODEL_SMART,
                 }).execute()
