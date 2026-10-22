@@ -161,11 +161,11 @@ class LocClient:
                 resp = getattr(e, "response", None)
                 status = resp.status_code if resp is not None else 599
                 smaller = next((n for n in (20, 5) if n < size and offset % n == 0), None)
-                if status == 404 and total is not None:
-                    # loc.gov answers 404 for result pages past what it will serve; treat as the end of this slice
-                    print(f"  loc.gov 404 at result {offset + 1} of {total}; ending this slice", flush=True)
-                    self.skipped += max(0, total - offset)
-                    return
+                if status == 404 and resp is not None:
+                    # Seen mid-range (result 51 of 1706), so it is not "past the end": handle it like a
+                    # server error (smaller pages, then skip), and log the URL so we can see why.
+                    print(f"  loc.gov 404 at result {offset + 1} of {total}: {resp.url}", flush=True)
+                    status = 503
                 if status >= 500 and smaller:
                     print(f"  loc.gov {status} at {size}/page; retrying at {smaller}/page", flush=True)
                     size = smaller
