@@ -2,6 +2,9 @@ import { adminConfigured, isAdmin } from "@/lib/admin/auth";
 import { AdminLogin } from "@/components/admin/AdminLogin";
 import { ReviewQueue } from "@/components/admin/ReviewQueue";
 
+// Reads env and cookies per request; never prerender (a build without ADMIN_PASSWORD would bake in "closed").
+export const dynamic = "force-dynamic";
+
 export default async function AdminPage() {
   if (!adminConfigured()) {
     return (
