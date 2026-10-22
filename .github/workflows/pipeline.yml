@@ -1,5 +1,7 @@
 # Data pipeline schedule (times are UTC; New Mexico is UTC-6 in summer, UTC-7 in winter).
 # Runs on GitHub Actions instead of Vercel Cron: Python-native, no function timeouts.
+# Scheduled runs write to the live site, so they only run while pipeline/LIVE_ON exists (added once
+# Joe has spot-checked the first records). "Run workflow" by hand always works.
 name: pipeline
 
 on:
@@ -39,29 +41,33 @@ jobs:
       - name: Database connected?
         id: db
         run: |
-          if [ -z "$SUPABASE_URL" ]; then echo "Database not connected yet (baas connect-tenant-site); skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$SUPABASE_URL" ]; then echo "::notice::Database not connected yet (baas connect-tenant-site); skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "schedule" ] && [ ! -f pipeline/LIVE_ON ]; then echo "Scheduled live runs are off until pipeline/LIVE_ON exists (after the spot-check); skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"
           else echo "ok=true" >> "$GITHUB_OUTPUT"; fi
 
       - name: Daily harvest
         if: steps.db.outputs.ok == 'true' && (github.event.schedule == '7 12 * * *' || inputs.job == 'harvest')
         run: |
-          python -m pipeline.harvest --rss --max-cost 1
-          python -m pipeline.geocode
-          python -m pipeline.historic_geo --limit 100
+          set -e
+          .github/scripts/run.sh rss-harvest python -m pipeline.harvest --rss --max-cost 1
+          .github/scripts/run.sh geocode python -m pipeline.geocode
+          .github/scripts/run.sh historic-geo python -m pipeline.historic_geo --limit 100
 
       - name: Nightly dedupe
         if: steps.db.outputs.ok == 'true' && (github.event.schedule == '37 8 * * *' || inputs.job == 'nightly')
         run: |
-          python -m pipeline.dedupe --limit 500
-          python -m pipeline.translate --limit 500
-          python -m pipeline.parcels match
+          set -e
+          .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500
+          .github/scripts/run.sh translate python -m pipeline.translate --limit 500
+          .github/scripts/run.sh parcel-match python -m pipeline.parcels match
 
       - name: Collect batches
         if: steps.db.outputs.ok == 'true' && (github.event.schedule == '17 */3 * * *' || inputs.job == 'batches')
-        run: python -m pipeline.batches poll
+        run: .github/scripts/run.sh batches python -m pipeline.batches poll
 
       - name: Load Bernalillo parcels (by hand)
         if: steps.db.outputs.ok == 'true' && inputs.job == 'parcels'
         run: |
-          python -m pipeline.parcels fetch bernalillo
-          python -m pipeline.parcels match
+          set -e
+          .github/scripts/run.sh parcels-fetch python -m pipeline.parcels fetch bernalillo
+          .github/scripts/run.sh parcel-match python -m pipeline.parcels match

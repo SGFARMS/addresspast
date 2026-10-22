@@ -28,6 +28,8 @@ Actions → **harvest** → Run workflow. Start with a dry run:
 
 The run summary says where it stopped. In live mode, `start_page: resume` continues from there.
 
+**Daily live jobs:** the scheduled `pipeline` runs (daily news harvest, nightly dedupe/translate/parcel match, batch collection) write to the live site, so they only run while an empty file `pipeline/LIVE_ON` exists. Add it after the first spot-check is approved; running a job by hand works either way.
+
 **Backlog autopilot:** add an empty file `pipeline/BACKFILL_ON` and a live run starts every 6 hours, picks up where the last one stopped, and stops for good once 1860–1963 is done (or the $20 cap is spent). Delete the file to pause it.
 
 Measured on 1910–1911 Albuquerque papers: about 5% of pages pass the pre-filter, and Haiku costs about $0.0002 per page sent. loc.gov speed varies a lot by day; a good day does about 80 pages a minute.
