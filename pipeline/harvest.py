@@ -66,6 +66,7 @@ class Stats:
     needs_review: int = 0
     sonnet_calls: int = 0
     errors: int = 0
+    first_error: str | None = None
     failed_slices: list = field(default_factory=list)
     cost_usd: float = 0.0
     cost_by_model: dict = field(default_factory=dict)
@@ -190,6 +191,7 @@ class Harvester:
                 continue
             except Exception as e:  # API error after SDK retries: leave the page unscanned so it's retried
                 self.stats.errors += 1
+                self.stats.first_error = self.stats.first_error or f"{type(e).__name__}: {str(e)[:300]}"
                 print(f"  extraction error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
                 continue
             self.stats.extracted_pages += 1
@@ -393,7 +395,7 @@ def summarize(stats: Stats, out_dir: str):
         f"| Pages sent to Claude | {s.extracted_pages} (Sonnet re-checks: {s.sonnet_calls}) |",
         f"| Records found | {s.records} on {s.pages_with_records} pages |",
         f"| Held for review (boarding house / business) | {s.needs_review} |",
-        f"| Errors | {s.errors} |",
+        f"| Errors | {s.errors}{' (first: ' + s.first_error + ')' if s.first_error else ''} |",
         f"| Claude cost | ${s.cost_usd:.4f} {json.dumps({k: round(v, 4) for k, v in s.cost_by_model.items()})} |",
         f"| Time | {s.elapsed_s / 60:.1f} min |",
         f"| Stopped because | {s.stopped_reason or 'finished'} |",
