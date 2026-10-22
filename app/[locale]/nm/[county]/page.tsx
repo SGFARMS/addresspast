@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { repo } from "@/lib/data";
+import { areaStatsForPage } from "@/lib/data";
 import { getAreaSummary } from "@/lib/ai/area-summary";
 import { AREA_VIEW, findCounty } from "@/lib/areas";
 import { routing } from "@/i18n/routing";
@@ -37,7 +37,7 @@ export default async function CountyPage({ params }: P) {
   if (!c) notFound();
   const t = await getTranslations({ locale, namespace: "area" });
   const area = `${c.name} County`;
-  const stats = await repo().areaStats(c.name, null, false);
+  const stats = await areaStatsForPage(c.name, null);
   const summary = await getAreaSummary({ county: c.name, city: null, area, stats, locale });
   return (
     <AreaView

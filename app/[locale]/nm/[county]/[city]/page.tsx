@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { repo } from "@/lib/data";
+import { areaStatsForPage } from "@/lib/data";
 import { getAreaSummary } from "@/lib/ai/area-summary";
 import { AREA_VIEW, findCity } from "@/lib/areas";
 import { routing } from "@/i18n/routing";
@@ -36,7 +36,7 @@ export default async function CityPage({ params }: P) {
   const found = findCity(county, city);
   if (!found) notFound();
   const area = found.city.name;
-  const stats = await repo().areaStats(found.county.name, found.city.name, false);
+  const stats = await areaStatsForPage(found.county.name, found.city.name);
   const summary = await getAreaSummary({ county: found.county.name, city: found.city.name, area, stats, locale });
   return (
     <AreaView
