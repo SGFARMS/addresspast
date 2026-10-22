@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "harvest | nightly | batches"
+        description: "harvest | nightly | batches | parcels"
         required: true
         default: nightly
 
@@ -59,3 +59,9 @@ jobs:
       - name: Collect batches
         if: steps.db.outputs.ok == 'true' && (github.event.schedule == '17 */3 * * *' || inputs.job == 'batches')
         run: python -m pipeline.batches poll
+
+      - name: Load Bernalillo parcels (by hand)
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'parcels'
+        run: |
+          python -m pipeline.parcels fetch bernalillo
+          python -m pipeline.parcels match
