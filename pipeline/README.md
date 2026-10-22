@@ -26,7 +26,11 @@ Actions → **harvest** → Run workflow. Start with a dry run:
 2. `mode: dry-run`, `extract_limit: 150`: extracts 150 candidates into `records.csv` (in the run's `harvest-out` artifact) for a spot-check. Needs the `ANTHROPIC_API_KEY` repo secret.
 3. `mode: live`: writes to the database and geocodes. Needs the database secrets from the baas `connect-tenant-site` task.
 
-The run summary says where it stopped and the exact `start_year` / `start_page` to resume from.
+The run summary says where it stopped. In live mode, `start_page: resume` continues from there.
+
+**Backlog autopilot:** add an empty file `pipeline/BACKFILL_ON` and a live run starts every 6 hours, picks up where the last one stopped, and stops for good once 1860–1963 is done (or the $20 cap is spent). Delete the file to pause it.
+
+Measured on 1910–1911 Albuquerque papers: about 5% of pages pass the pre-filter, and Haiku costs about $0.0002 per page sent. loc.gov speed varies a lot by day; a good day does about 80 pages a minute.
 
 ### What gets kept
 - A page is sent to Claude only if a death keyword (English or Spanish) appears within ~700 characters of a pilot town, or, for papers printed in Albuquerque/Belen/Bernalillo/Los Lunas/Rio Rancho, near a local cue like "street" or "his home".

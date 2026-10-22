@@ -95,6 +95,7 @@ class PipelineRun:
             "cost_usd": round(self.cost, 4),
             "batch_id": self.batch_id,
             "error": err,
+            "meta": self.meta,
         }).eq("id", self.id).execute()
         return exc_type is BudgetExceeded  # swallow budget stops, re-raise real errors
 

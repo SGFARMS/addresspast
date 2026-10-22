@@ -3,9 +3,13 @@
 #          extract_limit 150 = also extract 150 candidates into records.csv for a spot-check.
 # live:    writes to the BaaS tenant. Spend is capped across all runs by AP_HARVEST_CAP_USD ($20).
 # Results: the run summary, plus the "harvest-out" artifact (records.csv, stats.json, ...).
+# Backlog autopilot: while pipeline/BACKFILL_ON exists, a live Chronicling America run starts every
+# 6 hours and continues where the last one stopped (--resume) until the whole range is done.
 name: harvest
 
 on:
+  schedule:
+    - cron: "23 */6 * * *"
   workflow_dispatch:
     inputs:
       source:
@@ -67,29 +71,44 @@ jobs:
           cache-dependency-path: pipeline/requirements.txt
       - run: pip install -r pipeline/requirements.txt
 
-      - name: Check secrets
+      - name: Settings
+        id: cfg
         run: |
-          if [ "${{ inputs.mode }}" = "live" ] && [ -z "$SUPABASE_URL" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ ! -f pipeline/BACKFILL_ON ]; then echo "Backlog autopilot is off (no pipeline/BACKFILL_ON)."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+            echo "mode=live" >> "$GITHUB_OUTPUT"
+            echo "args=--loc --resume --start-year 1860 --end-year 1963 --scope local --max-cost 20" >> "$GITHUB_OUTPUT"
+          else
+            A="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }}"
+            if [ "${{ inputs.source }}" = "loc" ]; then
+              A="$A --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --max-pages ${{ inputs.max_pages }} --scope ${{ inputs.scope }}"
+              if [ "${{ inputs.start_page }}" = "resume" ]; then A="$A --resume"; else A="$A --start-page ${{ inputs.start_page }}"; fi
+            fi
+            if [ "${{ inputs.mode }}" = "dry-run" ]; then A="$A --dry-run --extract-limit ${{ inputs.extract_limit }}"; fi
+            echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+            echo "args=$A" >> "$GITHUB_OUTPUT"
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Check secrets
+        if: steps.cfg.outputs.skip != 'true'
+        run: |
+          if [ "${{ steps.cfg.outputs.mode }}" = "live" ] && [ -z "$SUPABASE_URL" ]; then
             echo "::error::Live mode needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (baas Droplet ops → connect-tenant-site)"; exit 1; fi
-          if [ "${{ inputs.extract_limit }}" != "0" ] || [ "${{ inputs.mode }}" = "live" ]; then
+          if [ "${{ inputs.extract_limit || '0' }}" != "0" ] || [ "${{ steps.cfg.outputs.mode }}" = "live" ]; then
             if [ -z "$ANTHROPIC_API_KEY" ]; then echo "::error::Add the ANTHROPIC_API_KEY repo secret"; exit 1; fi; fi
 
       - name: Harvest
-        run: |
-          # Stop cleanly before the job's 345-minute timeout so the summary and files are always written.
-          ARGS="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }} --max-minutes 320 --out harvest-out"
-          if [ "${{ inputs.source }}" = "loc" ]; then
-            ARGS="$ARGS --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --start-page ${{ inputs.start_page }} --max-pages ${{ inputs.max_pages }} --scope ${{ inputs.scope }}"
-          fi
-          if [ "${{ inputs.mode }}" = "dry-run" ]; then ARGS="$ARGS --dry-run --extract-limit ${{ inputs.extract_limit }}"; fi
-          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest $ARGS
+        if: steps.cfg.outputs.skip != 'true'
+        # Stops cleanly before the job's 345-minute timeout so the summary and files are always written.
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest ${{ steps.cfg.outputs.args }} --max-minutes 320 --out harvest-out
 
       - name: Geocode new records
-        if: inputs.mode == 'live'
+        if: steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
         run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --limit 5000
 
       - uses: actions/upload-artifact@v5
-        if: always()
+        if: always() && steps.cfg.outputs.skip != 'true'
         with:
           name: harvest-out
           path: harvest-out/

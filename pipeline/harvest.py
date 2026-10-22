@@ -75,6 +75,7 @@ class Stats:
     feeds: dict = field(default_factory=dict)
     stopped_reason: str | None = None
     resume_from: str | None = None
+    resume: dict | None = None
     elapsed_s: float = 0.0
 
 
@@ -211,16 +212,19 @@ class Harvester:
         from .sources.loc import Blocked, LocClient
 
         cities = LOCAL_PAPER_CITIES if self.args.scope == "local" else [None]
+        if self.args.start_city and self.args.start_city in cities:
+            cities = cities[cities.index(self.args.start_city):]
         t0 = time.monotonic()
         try:
-            for city in cities:
+            for ci, city in enumerate(cities):
                 loc = LocClient(city=city)
                 self.loc_clients.append(loc)
-                for start, end, n in loc.slices(self.args.start_year, self.args.end_year):
-                    year = start[:4]
+                first_year = self.args.start_year if ci == 0 else self.args.range_start
+                for start, end, n in loc.slices(first_year, self.args.end_year):
+                    year = int(start[:4])
                     where = city or "all NM papers"
                     print(f"{start}..{end} ({where})" + (f": {n} matching pages" if n >= 0 else ""), flush=True)
-                    first = self.args.start_page if start.startswith(str(self.args.start_year)) else 1
+                    first = self.args.start_offset if (ci == 0 and year == self.args.start_year and start.endswith("01-01")) else 0
                     try:
                         done = self._loc_slice(loc, start, end, first, year, city, where, t0)
                     except requests.RequestException as e:  # this slice keeps failing: note it and move on
@@ -230,21 +234,35 @@ class Harvester:
                         continue
                     if done:
                         return
-                    self.stats.resume_from = f"--start-year {int(year) + 1}" + (f" (city: {city})" if city else "")
+                    self._mark_resume(year + 1, 0, city)
+                # the next city starts from the beginning of the range
+                nxt = cities[ci + 1] if ci + 1 < len(cities) else None
+                self._mark_resume(self.args.range_start, 0, nxt) if nxt else self._mark_resume(None, 0, None)
         except Blocked as e:
             self.stats.stopped_reason = str(e)
         finally:
             self.stats.loc_requests = sum(c.requests_made for c in self.loc_clients)
             self.stats.loc_results_skipped = sum(c.skipped for c in self.loc_clients)
 
+    def _mark_resume(self, year: int | None, offset: int, city: str | None):
+        if year is None or year > self.args.end_year:
+            self.stats.resume = None
+            self.stats.resume_from = "done: the whole range is harvested"
+            return
+        self.stats.resume = {"year": year, "offset": offset, "city": city, "start_year": self.args.range_start,
+                             "end_year": self.args.end_year, "scope": self.args.scope}
+        self.stats.resume_from = f"--start-year {year} --start-offset {offset}" + (f" --start-city '{city}'" if city else "")
+
     def _loc_slice(self, loc, start, end, first, year, city, where, t0) -> bool:
-        """Page through one year for one city. Returns True when the whole run should stop."""
-        for sp, pages in loc.pages(start, end, per_page=self.args.per_page, start_page=first):
-            self.stats.resume_from = f"--start-year {year} --start-page {sp}" + (f" (city: {city})" if city else "")
-            self.handle_loc_pages(pages, year)
-            if sp % 10 == 0:
+        """Page through one date slice for one city. Returns True when the whole run should stop."""
+        batches = 0
+        for offset, pages in loc.pages(start, end, per_page=self.args.per_page, start_offset=first):
+            self._mark_resume(year, offset, city) if start.endswith("01-01") and end.endswith("12-31") else None
+            self.handle_loc_pages(pages, str(year))
+            batches += 1
+            if batches % 10 == 0:
                 mins = (time.monotonic() - t0) / 60
-                print(f"  {year} {where} page {sp}: seen {self.stats.pages_seen}, candidates {self.stats.candidates}, "
+                print(f"  {year} {where} result {offset}: seen {self.stats.pages_seen}, candidates {self.stats.candidates}, "
                       f"{mins:.0f} min, avg loc.gov wait {loc.seconds_waiting / max(loc.requests_made, 1):.1f}s", flush=True)
             if self.stop or (self.args.max_pages and self.stats.pages_seen >= self.args.max_pages):
                 self.stats.stopped_reason = self.stats.stopped_reason or "max pages reached"
@@ -326,6 +344,22 @@ class Harvester:
                 return
 
 
+def last_resume_point():
+    """The resume point the most recent live Chronicling America run saved (None = start fresh, 'done' = finished)."""
+    from .common.db import db
+
+    rows = (
+        db().table("ap_pipeline_runs").select("meta").eq("job", "harvest_loc")
+        .in_("status", ["ok", "partial", "error"]).order("started_at", desc=True).limit(1).execute().data
+    )
+    if not rows:
+        return None
+    st = (rows[0].get("meta") or {}).get("stats") or {}
+    if st.get("resume"):
+        return st["resume"]
+    return "done" if (st.get("resume_from") or "").startswith("done") else None
+
+
 def clean_title(t: str | None) -> str | None:
     """'the albuquerque morning journal. [volume] (albuquerque, n.m.) 1903-1922' -> 'The Albuquerque Morning Journal'."""
     if not t:
@@ -387,7 +421,10 @@ def main(argv=None):
     src.add_argument("--rss", action="store_true", help="local news RSS feeds")
     ap.add_argument("--start-year", type=int, default=1860)
     ap.add_argument("--end-year", type=int, default=1963)
-    ap.add_argument("--start-page", type=int, default=1, help="resume inside --start-year")
+    ap.add_argument("--start-page", type=int, default=1, help="resume inside --start-year (pages of --per-page)")
+    ap.add_argument("--start-offset", type=int, default=None, help="resume inside --start-year at this result number")
+    ap.add_argument("--start-city", default=None, help="local scope: start with this paper city")
+    ap.add_argument("--resume", action="store_true", help="continue where the last live Chronicling America run stopped")
     ap.add_argument("--per-page", type=int, default=50)
     ap.add_argument("--max-pages", type=int, default=0, help="stop after this many search-result pages (0 = no limit)")
     ap.add_argument("--dry-run", action="store_true", help="no database reads or writes")
@@ -399,6 +436,21 @@ def main(argv=None):
     ap.add_argument("--max-minutes", type=float, default=0, help="stop cleanly after this long (0 = no limit)")
     ap.add_argument("--out", default="harvest-out")
     args = ap.parse_args(argv)
+    if args.start_offset is None:
+        args.start_offset = (args.start_page - 1) * args.per_page
+    if args.resume and not args.dry_run and args.loc:
+        last = last_resume_point()
+        if last == "done":
+            print("Chronicling America backlog is already complete; nothing to resume.")
+            return
+        if last:
+            args.start_year, args.start_offset, args.start_city = last["year"], last["offset"], last.get("city")
+            args.range_start = last.get("start_year", args.start_year)
+            args.end_year = last.get("end_year", args.end_year)
+            args.scope = last.get("scope", args.scope)
+            print(f"Resuming at {args.start_year} result {args.start_offset} ({args.start_city or 'all NM papers'})", flush=True)
+    if not hasattr(args, "range_start"):
+        args.range_start = args.start_year
 
     source = "loc" if args.loc else "rss"
     stats = Stats(source=source, dry_run=args.dry_run)

@@ -66,27 +66,32 @@ class LocClient:
     skipped: int = 0
     seconds_waiting: float = 0.0
     city: str | None = None  # restrict to papers printed in this city (None = all NM papers)
-    max_retries: int = 2
+    max_retries: int = 1
 
     def __post_init__(self):
         self.session.headers["User-Agent"] = USER_AGENT
 
     def get_json(self, params: dict) -> dict:
-        """GET with pacing. Raises Blocked on rate limiting, requests.RequestException when retries run out."""
-        backoff = 30
-        for attempt in range(self.max_retries + 1):
+        """GET with pacing. Raises Blocked on rate limiting, requests.RequestException when retries run out.
+
+        Server errors and timeouts get one quick retry; pages() then shrinks the page size or skips.
+        (Long backoffs on loc.gov's flaky days cost hours and rarely helped.)"""
+        throttled = 0
+        failed = 0
+        while True:
             self.throttle.wait()
             self.requests_made += 1
             t0 = time.monotonic()
             try:
-                r = self.session.get(BASE, params=params, timeout=(15, 75))
+                r = self.session.get(BASE, params=params, timeout=(10, 45))
                 self.seconds_waiting += time.monotonic() - t0
                 ctype = r.headers.get("content-type", "")
                 if r.status_code == 429 or (r.status_code == 200 and "json" not in ctype):
                     # 429, or an HTML CAPTCHA/challenge page instead of JSON
-                    if attempt == self.max_retries:
+                    throttled += 1
+                    if throttled > 3:
                         raise Blocked(f"loc.gov rate limited us (status {r.status_code}); resume in an hour")
-                    wait = int(r.headers.get("retry-after", "0") or 0) or 60 * (attempt + 1)
+                    wait = int(r.headers.get("retry-after", "0") or 0) or 60 * throttled
                     print(f"  loc.gov throttled (status {r.status_code}); waiting {wait}s", flush=True)
                     time.sleep(wait)
                     continue
@@ -96,11 +101,11 @@ class LocClient:
                 raise
             except (requests.RequestException, ValueError) as e:
                 # timeouts, broken chunked responses, 5xx, truncated JSON
-                if attempt == self.max_retries:
+                self.seconds_waiting += time.monotonic() - t0
+                failed += 1
+                if failed > self.max_retries:
                     raise requests.RequestException(f"{type(e).__name__}: {e}", response=getattr(e, "response", None)) from e
-                time.sleep(backoff)
-                backoff *= 2
-        raise Blocked("loc.gov retries exhausted")
+                time.sleep(10)
 
     def search_params(self, start: str, end: str, page: int, per_page: int) -> dict:
         return {
@@ -138,24 +143,24 @@ class LocClient:
             for a, b in ((f"{y}-01-01", f"{y}-06-30"), (f"{y}-07-01", f"{y}-12-31")):
                 yield a, b, self.count(a, b)
 
-    def pages(self, start: str, end: str, per_page: int = 50, start_page: int = 1) -> Iterator[tuple[int, list[LocPage]]]:
-        """Yield (result_page_number, pages) for one date slice.
+    def pages(self, start: str, end: str, per_page: int = 50, start_offset: int = 0) -> Iterator[tuple[int, list[LocPage]]]:
+        """Yield (offset_after_this_batch, pages) for one date slice, starting at result number start_offset.
 
-        Pages carry full OCR text, so big result pages can time out on loc.gov's side (520/504).
-        When that happens we halve the page size (50 -> 25 -> 10 -> 5) and carry on from the same offset.
+        Pages carry full OCR text, so big result pages can fail on loc.gov's side (520/504/timeouts).
+        When that happens we drop to a smaller page size (50 -> 20 -> 5) and carry on from the same
+        offset; a stretch that still fails is skipped (counted in `skipped`).
         """
         size = per_page
-        offset = (start_page - 1) * per_page
+        offset = start_offset
         total: int | None = None
         skips_in_a_row = 0
         while total is None or offset < total:
-            sp = offset // size + 1
             try:
-                data = self.get_json(self.search_params(start, end, sp, size))
+                data = self.get_json(self.search_params(start, end, offset // size + 1, size))
             except requests.RequestException as e:
                 resp = getattr(e, "response", None)
                 status = resp.status_code if resp is not None else 599
-                smaller = next((n for n in (25, 10, 5) if n < size and offset % n == 0), None)
+                smaller = next((n for n in (20, 5) if n < size and offset % n == 0), None)
                 if status >= 500 and smaller:
                     print(f"  loc.gov {status} at {size}/page; retrying at {smaller}/page", flush=True)
                     size = smaller
@@ -169,12 +174,14 @@ class LocClient:
                 raise
             skips_in_a_row = 0
             results = data.get("results") or []
-            yield offset // per_page + 1, [p for p in (parse_result(r) for r in results) if p]
             pag = data.get("pagination") or {}
             total = int(pag.get("of") or 0)
+            offset += size
+            yield offset, [p for p in (parse_result(r) for r in results) if p]
             if not pag.get("next") or not results:
                 return
-            offset += size
+            if size < per_page and offset % per_page == 0:
+                size = per_page  # back to full-size pages once we're past the bad stretch
 
 
 def _as_list(v) -> list[str]:
