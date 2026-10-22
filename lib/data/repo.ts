@@ -1,4 +1,4 @@
-import type { AreaStats, Bbox, CityBucket, EventDetail, FreeCheck, MapEvent, MapFilters } from "@/lib/types";
+import type { AreaStats, Bbox, CityBucket, EventDetail, FreeCheck, MapEvent, MapFilters, RemovalRequest } from "@/lib/types";
 
 export interface AiUsage {
   feature: string;
@@ -26,6 +26,8 @@ export interface Repo {
   cityDecades(f: MapFilters): Promise<CityBucket[]>;
   eventDetail(id: string, full: boolean, locale: string): Promise<EventDetail | null>;
   areaStats(county: string, city: string | null, includeNatural: boolean): Promise<AreaStats>;
+  /** Fast lane: family/owner/tenant requests on records from the last 10 years hide the record at once. */
+  requestRemoval(r: RemovalRequest): Promise<{ ok: boolean; fastLane: boolean }>;
   addToWaitlist(row: { email: string; locale: string; county: string | null; referrer: string | null }): Promise<"ok" | "exists">;
   getAreaSummary(county: string, city: string, locale: string): Promise<{ body: string; statsHash: string } | null>;
   saveAreaSummary(row: { county: string; city: string; locale: string; body: string; statsHash: string; model: string }): Promise<void>;

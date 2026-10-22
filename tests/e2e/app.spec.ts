@@ -56,6 +56,18 @@ test.describe("app (preview)", () => {
     await expect(page.getByRole("link", { name: "View original newspaper page" }).first()).toBeVisible();
   });
 
+  test("older-than-building note and removal request", async ({ page }) => {
+    await page.getByRole("combobox").fill("100 Sample St");
+    await page.getByRole("option").first().click();
+    await expect(page.getByText("The building on this lot was built in 1948.", { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: /1932/ }).click();
+    await expect(page.getByText(/may refer to an earlier building/)).toBeVisible();
+    await page.getByRole("button", { name: "Report an error or request removal" }).click();
+    await page.getByLabel("Your email").fill("e2e@example.com");
+    await page.getByRole("button", { name: "Send request" }).click();
+    await expect(page.getByText(/A person will review/)).toBeVisible();
+  });
+
   test("natural deaths are hidden by default and can be shown", async ({ page }) => {
     await page.route("**/api/places/suggest**", (r) =>
       r.fulfill({ json: { places: [{ ...DOWNTOWN, label: "Belen spot", lat: 34.6616, lng: -106.7759, city: "Belen", county: "Valencia" }] } }),

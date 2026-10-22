@@ -13,13 +13,13 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - run: npm install --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+      - run: .github/scripts/run.sh install npm install --no-audit --no-fund
+      - run: .github/scripts/run.sh typecheck npm run typecheck
+      - run: .github/scripts/run.sh lint npm run lint
+      - run: .github/scripts/run.sh unit npm test
+      - run: .github/scripts/run.sh build npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run e2e
+      - run: .github/scripts/run.sh e2e npm run e2e
 
   pipeline:
     runs-on: ubuntu-latest
@@ -29,4 +29,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pytest requests
-      - run: python -m pytest pipeline/tests -q
+      - run: .github/scripts/run.sh pytest python -m pytest pipeline/tests -q

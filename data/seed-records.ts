@@ -28,6 +28,10 @@ export interface SeedRecord {
   summary: string;
   summaryEs: string;
   sources: SeedSource[];
+  /** Apartment/unit record: the site says "this building", never the unit. */
+  buildingLevel?: boolean;
+  /** Year the lot's current building was built (from parcel data). */
+  lotYearBuilt?: number;
 }
 
 const LOC = "https://www.loc.gov/collections/chronicling-america/";
@@ -271,6 +275,9 @@ export const SEED_RECORDS: SeedRecord[] = rows.map(
       summary,
       summaryEs,
       sources,
+      // The demo address's lot: current building from 1948, and #41 happened in an apartment there.
+      ...(n === 13 || n === 41 ? { lotYearBuilt: 1948 } : {}),
+      ...(n === 41 ? { buildingLevel: true } : {}),
     };
   },
 );

@@ -38,6 +38,8 @@ function toItem(x: any): CheckItem {
     precision: x.precision,
     verified: Boolean(x.verified),
     distanceM: Number(x.distance_m ?? 0),
+    buildingLevel: Boolean(x.building_level),
+    predatesBuilding: Boolean(x.predates_building),
   };
 }
 
@@ -56,6 +58,7 @@ export const supabaseRepo: Repo = {
     });
     const r: FreeCheck = {
       parcelMatched: Boolean(d.parcel_matched),
+      parcelYearBuilt: d.parcel_year_built ?? null,
       atAddress: (d.at_address ?? []).map(toItem),
       nearby: (d.nearby ?? []).map(toItem),
       cityOnlyCount: Number(d.city_only_count ?? 0),
@@ -105,12 +108,21 @@ export const supabaseRepo: Repo = {
       city: d.city,
       county: d.county,
       sourceCount: d.source_count,
+      buildingLevel: Boolean(d.building_level),
+      parcelYearBuilt: d.parcel_year_built ?? null,
       summary: d.summary ?? null,
       sources: (d.sources ?? []).map((s: any) => ({
         name: s.name, published: s.published ?? null, url: s.url ?? null, isLocScan: Boolean(s.is_loc_scan),
       })),
     };
     return r;
+  },
+
+  async requestRemoval(r) {
+    const d = await rpc<any>("ap_api_request_removal", {
+      p_event_id: r.eventId, p_email: r.email, p_relationship: r.relationship, p_reason: r.reason, p_details: r.details,
+    });
+    return { ok: Boolean(d?.ok), fastLane: Boolean(d?.fast_lane) };
   },
 
   async areaStats(county, city, includeNatural) {

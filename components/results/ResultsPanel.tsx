@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ChevronLeft, ExternalLink, Info, Newspaper, X } from "lucide-react";
+import { Building2, ChevronLeft, ExternalLink, History, Info, Newspaper, X } from "lucide-react";
 import { siteConfig } from "@/site.config";
 import { dateLabel, metersLabel, yearLabel } from "@/lib/format";
 import { track } from "@/lib/analytics";
@@ -10,6 +10,7 @@ import type { CheckItem, EventDetail, FreeCheck, Place } from "@/lib/types";
 import {
   ConfidenceMeter, Disclaimer, PrecisionBadge, ShapeIcon, TYPE_SHAPES, VerifiedBadge, markerColor, useRecordLabels,
 } from "@/components/records/bits";
+import { RemovalForm } from "@/components/records/RemovalForm";
 
 interface Props {
   place: Place;
@@ -110,6 +111,15 @@ function FreeCheckCard({ check, includeNatural, onlyDeaths, onSelect, onToggleNa
           </p>
         )}
         {check.parcelMatched && <p className="mt-2 text-xs text-ink-3">{t("parcel")}</p>}
+        {check.parcelYearBuilt && (
+          <p className="mt-2 flex gap-1.5 text-sm text-ink-2">
+            <History size={16} className="mt-0.5 shrink-0" aria-hidden />
+            <span>
+              {t("builtIn", { year: check.parcelYearBuilt })}{" "}
+              {at.some((i) => i.predatesBuilding) && t("olderThanBuilding", { count: at.filter((i) => i.predatesBuilding).length })}
+            </span>
+          </p>
+        )}
       </div>
 
       {at.length > 0 && <RecordList title={t("atThisAddress")} items={at} onSelect={onSelect} />}
@@ -143,6 +153,8 @@ function RecordList({ title, items, onSelect, showDistance }: { title: string; i
                 <span className="mt-1.5 flex flex-wrap items-center gap-2">
                   <PrecisionBadge precision={i.precision} />
                   {i.verified && <VerifiedBadge />}
+                  {i.buildingLevel && <Chip icon="building">{t("record.buildingLevel")}</Chip>}
+                  {i.predatesBuilding && <Chip icon="history">{t("record.predates")}</Chip>}
                   {showDistance && <span className="text-xs text-ink-3">{t("record.distance", { distance: metersLabel(i.distanceM, locale) })}</span>}
                 </span>
               </span>
@@ -196,6 +208,16 @@ function RecordDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <ConfidenceMeter value={d.confidence} />
             {d.verified && <VerifiedBadge />}
           </div>
+          {(d.buildingLevel || (d.parcelYearBuilt && d.year && d.year < d.parcelYearBuilt)) && (
+            <ul className="space-y-1.5 text-sm text-ink-2">
+              {d.buildingLevel && (
+                <li className="flex gap-1.5"><Building2 size={16} className="mt-0.5 shrink-0" aria-hidden />{t("buildingLevelHelp")}</li>
+              )}
+              {d.parcelYearBuilt && d.year && d.year < d.parcelYearBuilt && (
+                <li className="flex gap-1.5"><History size={16} className="mt-0.5 shrink-0" aria-hidden />{t("predatesHelp", { built: d.parcelYearBuilt, year: d.year })}</li>
+              )}
+            </ul>
+          )}
           {d.summary ? (
             <p className="rounded-2xl border border-line bg-surface-2/50 p-4 leading-relaxed">{d.summary}</p>
           ) : (
@@ -218,12 +240,20 @@ function RecordDetail({ id, onBack }: { id: string; onBack: () => void }) {
               ))}
             </ul>
           </div>
-          <button type="button" disabled title={t("reportSoon")} className="w-fit cursor-not-allowed rounded-lg border border-line px-3 py-2 text-sm text-ink-3">
-            {t("reportError")} <span className="text-xs">({t("reportSoon")})</span>
-          </button>
+          <RemovalForm key={d.id} eventId={d.id} />
           <Disclaimer />
         </>
       )}
     </section>
+  );
+}
+
+function Chip({ icon, children }: { icon: "building" | "history"; children: React.ReactNode }) {
+  const Icon = icon === "building" ? Building2 : History;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-xs text-ink-2">
+      <Icon size={12} aria-hidden />
+      {children}
+    </span>
   );
 }

@@ -55,7 +55,9 @@
     "close": "Close results",
     "noYear": "Year unknown",
     "atThisAddress": "At this address",
-    "nearbyHeading": "Nearby"
+    "nearbyHeading": "Nearby",
+    "builtIn": "The building on this lot was built in {year}.",
+    "olderThanBuilding": "{count, plural, =1 {# record here is older than it and may refer to an earlier building on the lot.} other {# records here are older than it and may refer to an earlier building on the lot.}}"
   },
   "record": {
     "distance": "{distance} away",
@@ -73,7 +75,11 @@
     "loading": "Loading record…",
     "back": "Back to results",
     "reportError": "Report an error or request removal",
-    "reportSoon": "Coming in the next update"
+    "reportSoon": "Coming in the next update",
+    "buildingLevel": "In this building",
+    "buildingLevelHelp": "This happened in an apartment or unit in this building. We never show which unit.",
+    "predates": "Older than the current building",
+    "predatesHelp": "The building on this lot was built in {built}. This record is from {year}, so it may refer to an earlier building."
   },
   "precision": {
     "street": "Exact address",
@@ -182,5 +188,34 @@
     "generic": "Something went wrong. Please try again.",
     "rateLimited": "Too many searches in a short time. Please wait a minute.",
     "geocoder": "Address lookup is having trouble. Try again, or tap the map."
+  },
+  "removal": {
+    "open": "Report an error or request removal",
+    "title": "Report an error or request removal",
+    "intro": "Tell us what's wrong. If this record is about someone close to you and it's from the last 10 years, we hide it right away while we review.",
+    "email": "Your email",
+    "relationship": "Your connection to this record",
+    "relationships": {
+      "family": "Family of the person",
+      "owner": "Property owner",
+      "tenant": "Live or lived there",
+      "agent": "Real estate agent",
+      "other": "Other"
+    },
+    "reason": "What should we do?",
+    "reasons": {
+      "remove": "Remove this record",
+      "wrong_location": "The location is wrong",
+      "wrong_details": "Details are wrong",
+      "other": "Something else"
+    },
+    "details": "Details (optional)",
+    "submit": "Send request",
+    "sending": "Sending…",
+    "cancel": "Cancel",
+    "done": "Thanks. A person will review your request, usually within a few days.",
+    "doneFast": "Thanks. We've hidden this record while we review your request. It can take a few minutes to disappear everywhere.",
+    "error": "We couldn't send that. Please try again in a few minutes.",
+    "privacy": "We use your email only to follow up on this request."
   }
 }

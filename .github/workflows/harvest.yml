@@ -75,11 +75,11 @@ jobs:
             ARGS="$ARGS --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --start-page ${{ inputs.start_page }} --max-pages ${{ inputs.max_pages }}"
           fi
           if [ "${{ inputs.mode }}" = "dry-run" ]; then ARGS="$ARGS --dry-run --extract-limit ${{ inputs.extract_limit }}"; fi
-          python -m pipeline.harvest $ARGS
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest $ARGS
 
       - name: Geocode new records
         if: inputs.mode == 'live'
-        run: python -m pipeline.geocode --limit 5000
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --limit 5000
 
       - uses: actions/upload-artifact@v5
         if: always()

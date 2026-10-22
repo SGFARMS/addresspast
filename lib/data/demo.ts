@@ -14,6 +14,7 @@ const events = SEED_RECORDS.map((r) => ({
 }));
 
 const waitlist = new Set<string>();
+const removalRequests: { eventId: string; fastLane: boolean }[] = [];
 const summaries = new Map<string, { body: string; statsHash: string }>();
 
 function coverageFor(county: string | null): Coverage | null {
@@ -40,6 +41,8 @@ function item(e: (typeof events)[number], d: number): CheckItem {
     precision: e.precision,
     verified: e.verified,
     distanceM: Math.round(d),
+    buildingLevel: Boolean(e.buildingLevel),
+    predatesBuilding: Boolean(e.lotYearBuilt && e.year < e.lotYearBuilt),
   };
 }
 
@@ -58,6 +61,7 @@ export const demoRepo: Repo = {
       withD.sort((a, b) => a.d - b.d).find(({ d }) => d < 30000)?.e.county ?? null;
     const result: FreeCheck = {
       parcelMatched: false,
+      parcelYearBuilt: at.find(({ e }) => e.lotYearBuilt)?.e.lotYearBuilt ?? null,
       atAddress: at.map(({ e, d }) => item(e, d)).sort((a, b) => (a.year ?? 0) - (b.year ?? 0)),
       nearby: near.map(({ e, d }) => item(e, d)),
       cityOnlyCount: city
@@ -123,6 +127,8 @@ export const demoRepo: Repo = {
       city: e.city,
       county: e.county,
       sourceCount: e.sourceCount,
+      buildingLevel: Boolean(e.buildingLevel),
+      parcelYearBuilt: e.lotYearBuilt ?? null,
       summary: full ? (locale === "es" ? e.summaryEs : e.summary) : null,
       sources: e.sources.map((s) => ({
         name: s.name,
@@ -152,6 +158,14 @@ export const demoRepo: Repo = {
       coverage: coverageFor(county),
     };
     return stats;
+  },
+
+  async requestRemoval(r) {
+    const e = events.find((x) => x.id === r.eventId);
+    if (!e) return { ok: false, fastLane: false };
+    const fastLane = ["family", "owner", "tenant"].includes(r.relationship) && e.year >= new Date().getFullYear() - 10;
+    removalRequests.push({ eventId: r.eventId, fastLane });
+    return { ok: true, fastLane };
   },
 
   async addToWaitlist({ email }) {

@@ -55,7 +55,9 @@
     "close": "Cerrar resultados",
     "noYear": "Año desconocido",
     "atThisAddress": "En esta dirección",
-    "nearbyHeading": "Cerca"
+    "nearbyHeading": "Cerca",
+    "builtIn": "El edificio de este lote se construyó en {year}.",
+    "olderThanBuilding": "{count, plural, =1 {# registro aquí es anterior al edificio y puede referirse a una construcción anterior en el lote.} other {# registros aquí son anteriores al edificio y pueden referirse a una construcción anterior en el lote.}}"
   },
   "record": {
     "distance": "a {distance}",
@@ -73,7 +75,11 @@
     "loading": "Cargando registro…",
     "back": "Volver a los resultados",
     "reportError": "Reportar un error o pedir que se retire",
-    "reportSoon": "Disponible en la próxima actualización"
+    "reportSoon": "Disponible en la próxima actualización",
+    "buildingLevel": "En este edificio",
+    "buildingLevelHelp": "Ocurrió en un apartamento o unidad de este edificio. Nunca mostramos cuál unidad.",
+    "predates": "Anterior al edificio actual",
+    "predatesHelp": "El edificio de este lote se construyó en {built}. Este registro es de {year}, así que puede referirse a una construcción anterior."
   },
   "precision": {
     "street": "Dirección exacta",
@@ -182,5 +188,34 @@
     "generic": "Algo salió mal. Inténtelo de nuevo.",
     "rateLimited": "Demasiadas búsquedas en poco tiempo. Espere un minuto.",
     "geocoder": "La búsqueda de direcciones tiene problemas. Inténtelo de nuevo o toque el mapa."
+  },
+  "removal": {
+    "open": "Reportar un error o pedir que se quite",
+    "title": "Reportar un error o pedir que se quite",
+    "intro": "Díganos qué está mal. Si el registro trata de alguien cercano a usted y es de los últimos 10 años, lo ocultamos de inmediato mientras lo revisamos.",
+    "email": "Su correo electrónico",
+    "relationship": "Su relación con este registro",
+    "relationships": {
+      "family": "Familiar de la persona",
+      "owner": "Dueño de la propiedad",
+      "tenant": "Vive o vivió ahí",
+      "agent": "Agente de bienes raíces",
+      "other": "Otra"
+    },
+    "reason": "¿Qué debemos hacer?",
+    "reasons": {
+      "remove": "Quitar este registro",
+      "wrong_location": "La ubicación está mal",
+      "wrong_details": "Los detalles están mal",
+      "other": "Otra cosa"
+    },
+    "details": "Detalles (opcional)",
+    "submit": "Enviar solicitud",
+    "sending": "Enviando…",
+    "cancel": "Cancelar",
+    "done": "Gracias. Una persona revisará su solicitud, normalmente en unos días.",
+    "doneFast": "Gracias. Ocultamos este registro mientras revisamos su solicitud. Puede tardar unos minutos en desaparecer en todas partes.",
+    "error": "No pudimos enviarlo. Inténtelo de nuevo en unos minutos.",
+    "privacy": "Usamos su correo solo para dar seguimiento a esta solicitud."
   }
 }

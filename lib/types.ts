@@ -47,6 +47,10 @@ export interface CheckItem {
   precision: GeoPrecision;
   verified: boolean;
   distanceM: number;
+  /** Came from an apartment/unit: say "this building", not a unit. */
+  buildingLevel: boolean;
+  /** The record is older than the building now on the lot. */
+  predatesBuilding: boolean;
 }
 
 export interface Coverage {
@@ -59,6 +63,7 @@ export interface Coverage {
 
 export interface FreeCheck {
   parcelMatched: boolean;
+  parcelYearBuilt: number | null;
   atAddress: CheckItem[];
   nearby: CheckItem[];
   cityOnlyCount: number;
@@ -85,8 +90,20 @@ export interface EventDetail {
   city: string | null;
   county: string | null;
   sourceCount: number;
+  buildingLevel: boolean;
+  parcelYearBuilt: number | null;
   summary: string | null;
   sources: EventSource[];
+}
+
+export type Relationship = "owner" | "family" | "tenant" | "agent" | "other";
+
+export interface RemovalRequest {
+  eventId: string;
+  email: string;
+  relationship: Relationship;
+  reason: string;
+  details: string | null;
 }
 
 export interface AreaStats {

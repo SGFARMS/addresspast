@@ -46,7 +46,13 @@ def describe(r: dict) -> str:
 
 
 def ensure_events(run) -> list[dict]:
-    rows = db().table("ap_incidents").select(FIELDS).is_("event_id", "null").eq("hidden", False).limit(5000).execute().data
+    # Only geocoded, visible records that aren't waiting for human review become events.
+    rows = (
+        db().table("ap_incidents").select(FIELDS)
+        .is_("event_id", "null").eq("hidden", False).eq("needs_review", False)
+        .not_.is_("geocode_status", "null")
+        .limit(5000).execute().data
+    )
     for r in rows:
         ev = db().table("ap_events").insert({
             "record_type": r.get("record_type") or "death",
