@@ -35,6 +35,12 @@ on:
       max_cost:
         description: "USD cap for this run"
         default: "20"
+      scope:
+        description: "loc: local (papers printed in ABQ/Belen/Los Lunas/Bernalillo) or state (every NM paper)"
+        required: true
+        default: local
+        type: choice
+        options: [local, state]
       max_pages:
         description: "stop after this many newspaper pages (0 = no limit)"
         default: "0"
@@ -70,9 +76,10 @@ jobs:
 
       - name: Harvest
         run: |
-          ARGS="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }} --out harvest-out"
+          # Stop cleanly before the job's 345-minute timeout so the summary and files are always written.
+          ARGS="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }} --max-minutes 320 --out harvest-out"
           if [ "${{ inputs.source }}" = "loc" ]; then
-            ARGS="$ARGS --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --start-page ${{ inputs.start_page }} --max-pages ${{ inputs.max_pages }}"
+            ARGS="$ARGS --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --start-page ${{ inputs.start_page }} --max-pages ${{ inputs.max_pages }} --scope ${{ inputs.scope }}"
           fi
           if [ "${{ inputs.mode }}" = "dry-run" ]; then ARGS="$ARGS --dry-run --extract-limit ${{ inputs.extract_limit }}"; fi
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest $ARGS

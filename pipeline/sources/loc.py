@@ -64,41 +64,42 @@ class LocClient:
     session: requests.Session = field(default_factory=requests.Session)
     requests_made: int = 0
     skipped: int = 0
+    seconds_waiting: float = 0.0
+    city: str | None = None  # restrict to papers printed in this city (None = all NM papers)
     max_retries: int = 2
 
     def __post_init__(self):
         self.session.headers["User-Agent"] = USER_AGENT
 
     def get_json(self, params: dict) -> dict:
-        backoff = 60
+        """GET with pacing. Raises Blocked on rate limiting, requests.RequestException when retries run out."""
+        backoff = 30
         for attempt in range(self.max_retries + 1):
             self.throttle.wait()
             self.requests_made += 1
+            t0 = time.monotonic()
             try:
-                r = self.session.get(BASE, params=params, timeout=90)
-            except requests.RequestException:
+                r = self.session.get(BASE, params=params, timeout=(15, 75))
+                self.seconds_waiting += time.monotonic() - t0
+                ctype = r.headers.get("content-type", "")
+                if r.status_code == 429 or (r.status_code == 200 and "json" not in ctype):
+                    # 429, or an HTML CAPTCHA/challenge page instead of JSON
+                    if attempt == self.max_retries:
+                        raise Blocked(f"loc.gov rate limited us (status {r.status_code}); resume in an hour")
+                    wait = int(r.headers.get("retry-after", "0") or 0) or 60 * (attempt + 1)
+                    print(f"  loc.gov throttled (status {r.status_code}); waiting {wait}s", flush=True)
+                    time.sleep(wait)
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except Blocked:
+                raise
+            except (requests.RequestException, ValueError) as e:
+                # timeouts, broken chunked responses, 5xx, truncated JSON
                 if attempt == self.max_retries:
-                    raise
+                    raise requests.RequestException(f"{type(e).__name__}: {e}", response=getattr(e, "response", None)) from e
                 time.sleep(backoff)
                 backoff *= 2
-                continue
-            ctype = r.headers.get("content-type", "")
-            if r.status_code == 429 or (r.status_code == 200 and "json" not in ctype):
-                # 429, or an HTML CAPTCHA/challenge page instead of JSON
-                if attempt == self.max_retries:
-                    raise Blocked(f"loc.gov rate limited us (status {r.status_code}); resume in an hour")
-                wait = int(r.headers.get("retry-after", "0") or 0) or backoff
-                print(f"  loc.gov throttled (status {r.status_code}); waiting {wait}s", flush=True)
-                time.sleep(wait)
-                backoff = min(backoff * 2, 900)
-                continue
-            if r.status_code >= 500:
-                if attempt == self.max_retries:
-                    r.raise_for_status()
-                time.sleep(20)
-                continue
-            r.raise_for_status()
-            return r.json()
         raise Blocked("loc.gov retries exhausted")
 
     def search_params(self, start: str, end: str, page: int, per_page: int) -> dict:
@@ -108,6 +109,7 @@ class LocClient:
             "ops": "OR",
             "searchType": "advanced",
             "location_state": "new mexico",
+            **({"location_city": self.city} if self.city else {}),
             "start_date": start,
             "end_date": end,
             "c": per_page,
@@ -124,6 +126,9 @@ class LocClient:
         """Yield (start, end, n_results) date ranges small enough to page through safely."""
         for y in range(start_year, end_year + 1):
             s, e = f"{y}-01-01", f"{y}-12-31"
+            if self.city:  # one city's papers never come near the 100k-result limit in a year
+                yield s, e, -1
+                continue
             n = self.count(s, e)
             if n == 0:
                 continue
@@ -141,26 +146,32 @@ class LocClient:
         """
         size = per_page
         offset = (start_page - 1) * per_page
-        while True:
+        total: int | None = None
+        skips_in_a_row = 0
+        while total is None or offset < total:
             sp = offset // size + 1
             try:
                 data = self.get_json(self.search_params(start, end, sp, size))
-            except requests.HTTPError as e:
-                status = e.response.status_code if e.response is not None else 0
+            except requests.RequestException as e:
+                resp = getattr(e, "response", None)
+                status = resp.status_code if resp is not None else 599
                 smaller = next((n for n in (25, 10, 5) if n < size and offset % n == 0), None)
                 if status >= 500 and smaller:
                     print(f"  loc.gov {status} at {size}/page; retrying at {smaller}/page", flush=True)
                     size = smaller
                     continue
-                if status >= 500:
+                if status >= 500 and skips_in_a_row < 5:
                     print(f"  loc.gov {status}; skipping results {offset + 1}-{offset + size}", flush=True)
                     offset += size
                     self.skipped += size
+                    skips_in_a_row += 1
                     continue
                 raise
+            skips_in_a_row = 0
             results = data.get("results") or []
             yield offset // per_page + 1, [p for p in (parse_result(r) for r in results) if p]
             pag = data.get("pagination") or {}
+            total = int(pag.get("of") or 0)
             if not pag.get("next") or not results:
                 return
             offset += size

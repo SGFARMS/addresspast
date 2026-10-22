@@ -25,6 +25,8 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+
+import requests
 from dataclasses import asdict, dataclass, field
 
 from .common.config import MODEL_FAST, MODEL_SMART
@@ -33,6 +35,9 @@ from .extract import extract, to_rows
 from .lang import detect_language, has_keyword
 from .places_nm import is_pilot_paper
 from .prefilter import build_prompt_text, candidate_windows
+
+# Papers printed in the pilot area (Chronicling America location_city values). Most local news is here.
+LOCAL_PAPER_CITIES = ["albuquerque", "belen", "los lunas", "bernalillo"]
 
 HARVEST_CAP_USD = float(os.environ.get("AP_HARVEST_CAP_USD", "20"))
 SONNET_SHARE = float(os.environ.get("AP_SONNET_SHARE", "0.4"))
@@ -61,6 +66,7 @@ class Stats:
     needs_review: int = 0
     sonnet_calls: int = 0
     errors: int = 0
+    failed_slices: list = field(default_factory=list)
     cost_usd: float = 0.0
     cost_by_model: dict = field(default_factory=dict)
     by_year: dict = field(default_factory=dict)
@@ -111,6 +117,7 @@ class Harvester:
         self.stats = stats
         self.pool = ThreadPoolExecutor(max_workers=args.workers)
         self.ai_calls_left = args.extract_limit if args.dry_run else None
+        self.loc_clients: list = []
         self.stop = False
 
     # ── database helpers (live mode only) ────────────────────────────────
@@ -203,27 +210,49 @@ class Harvester:
     def harvest_loc(self):
         from .sources.loc import Blocked, LocClient
 
-        loc = LocClient()
+        cities = LOCAL_PAPER_CITIES if self.args.scope == "local" else [None]
+        t0 = time.monotonic()
         try:
-            for start, end, n in loc.slices(self.args.start_year, self.args.end_year):
-                print(f"{start}..{end}: {n} matching pages", flush=True)
-                year = start[:4]
-                first = self.args.start_page if start.startswith(str(self.args.start_year)) else 1
-                for sp, pages in loc.pages(start, end, per_page=self.args.per_page, start_page=first):
-                    self.stats.loc_requests = loc.requests_made
-                    self.stats.resume_from = f"--start-year {year} --start-page {sp}"
-                    self.handle_loc_pages(pages, year)
-                    if sp % 10 == 0:
-                        print(f"  {year} page {sp}: seen {self.stats.pages_seen}, candidates {self.stats.candidates}", flush=True)
-                    if self.stop or (self.args.max_pages and self.stats.pages_seen >= self.args.max_pages):
-                        self.stats.stopped_reason = self.stats.stopped_reason or "max pages reached"
+            for city in cities:
+                loc = LocClient(city=city)
+                self.loc_clients.append(loc)
+                for start, end, n in loc.slices(self.args.start_year, self.args.end_year):
+                    year = start[:4]
+                    where = city or "all NM papers"
+                    print(f"{start}..{end} ({where})" + (f": {n} matching pages" if n >= 0 else ""), flush=True)
+                    first = self.args.start_page if start.startswith(str(self.args.start_year)) else 1
+                    try:
+                        done = self._loc_slice(loc, start, end, first, year, city, where, t0)
+                    except requests.RequestException as e:  # this slice keeps failing: note it and move on
+                        self.stats.errors += 1
+                        self.stats.failed_slices.append(f"{year} {where}: {str(e)[:120]}")
+                        print(f"  giving up on {year} ({where}): {e}", file=sys.stderr, flush=True)
+                        continue
+                    if done:
                         return
-                self.stats.resume_from = f"--start-year {int(year) + 1}"
+                    self.stats.resume_from = f"--start-year {int(year) + 1}" + (f" (city: {city})" if city else "")
         except Blocked as e:
             self.stats.stopped_reason = str(e)
         finally:
-            self.stats.loc_requests = loc.requests_made
-            self.stats.loc_results_skipped = loc.skipped
+            self.stats.loc_requests = sum(c.requests_made for c in self.loc_clients)
+            self.stats.loc_results_skipped = sum(c.skipped for c in self.loc_clients)
+
+    def _loc_slice(self, loc, start, end, first, year, city, where, t0) -> bool:
+        """Page through one year for one city. Returns True when the whole run should stop."""
+        for sp, pages in loc.pages(start, end, per_page=self.args.per_page, start_page=first):
+            self.stats.resume_from = f"--start-year {year} --start-page {sp}" + (f" (city: {city})" if city else "")
+            self.handle_loc_pages(pages, year)
+            if sp % 10 == 0:
+                mins = (time.monotonic() - t0) / 60
+                print(f"  {year} {where} page {sp}: seen {self.stats.pages_seen}, candidates {self.stats.candidates}, "
+                      f"{mins:.0f} min, avg loc.gov wait {loc.seconds_waiting / max(loc.requests_made, 1):.1f}s", flush=True)
+            if self.stop or (self.args.max_pages and self.stats.pages_seen >= self.args.max_pages):
+                self.stats.stopped_reason = self.stats.stopped_reason or "max pages reached"
+                return True
+            if self.args.max_minutes and (time.monotonic() - t0) / 60 >= self.args.max_minutes:
+                self.stats.stopped_reason = f"time limit ({self.args.max_minutes:.0f} min)"
+                return True
+        return False
 
     def handle_loc_pages(self, pages, year: str):
         s = self.stats
@@ -340,6 +369,7 @@ def summarize(stats: Stats, out_dir: str):
         f"By precision: {json.dumps(s.by_precision)}",
         f"Candidates by year: {json.dumps(s.by_year)}",
         f"Feeds: {json.dumps(s.feeds)}" if s.feeds else "",
+        f"Gave up on: {'; '.join(s.failed_slices)}" if s.failed_slices else "",
         est,
         f"\nFiles in `{out_dir}/`: records.csv (spot-check sheet), records.jsonl, candidates.jsonl, usage.jsonl, stats.json",
     ]
@@ -364,6 +394,9 @@ def main(argv=None):
     ap.add_argument("--extract-limit", type=int, default=0, help="dry run only: send this many candidates to Claude")
     ap.add_argument("--max-cost", type=float, default=None, help="USD cap for this run (also bounded by AP_HARVEST_CAP_USD)")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--scope", choices=["local", "state"], default="local",
+                    help="local = papers printed in Albuquerque, Belen, Los Lunas, Bernalillo; state = every NM paper")
+    ap.add_argument("--max-minutes", type=float, default=0, help="stop cleanly after this long (0 = no limit)")
     ap.add_argument("--out", default="harvest-out")
     args = ap.parse_args(argv)
 
@@ -388,9 +421,16 @@ def main(argv=None):
 
     with run_cm as run:
         h = Harvester(args, run, out, stats)
+        crashed = None
         try:
             if not stats.stopped_reason:
                 h.harvest_loc() if args.loc else h.harvest_rss()
+        except Exception as e:  # keep what we have: write the files and the summary, then fail the job
+            import traceback
+
+            traceback.print_exc()
+            crashed = e
+            stats.stopped_reason = f"error: {type(e).__name__}: {str(e)[:200]}"
         finally:
             h.pool.shutdown(wait=True)
             stats.cost_usd = round(run.cost, 4)
@@ -401,6 +441,8 @@ def main(argv=None):
             run.meta = {**run.meta, "stats": asdict(stats)}
     out.close(stats)
     summarize(stats, args.out)
+    if crashed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
