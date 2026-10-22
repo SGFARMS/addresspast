@@ -64,7 +64,7 @@ export const siteConfig = {
 
   /** Autocomplete provider. Nominatim's policy forbids autocomplete, so Photon is the default. */
   geocoder: {
-    provider: "photon" as "photon",
+    provider: "photon" as const,
     photonUrl: "https://photon.komoot.io",
     userAgent: "AddressPast/0.1 (history.skyhighwebsites.dev)",
   },
