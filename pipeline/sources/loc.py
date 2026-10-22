@@ -63,7 +63,8 @@ class LocClient:
     throttle: Throttle = field(default_factory=Throttle)
     session: requests.Session = field(default_factory=requests.Session)
     requests_made: int = 0
-    max_retries: int = 3
+    skipped: int = 0
+    max_retries: int = 2
 
     def __post_init__(self):
         self.session.headers["User-Agent"] = USER_AGENT
@@ -94,7 +95,7 @@ class LocClient:
             if r.status_code >= 500:
                 if attempt == self.max_retries:
                     r.raise_for_status()
-                time.sleep(backoff)
+                time.sleep(20)
                 continue
             r.raise_for_status()
             return r.json()
@@ -132,17 +133,37 @@ class LocClient:
             for a, b in ((f"{y}-01-01", f"{y}-06-30"), (f"{y}-07-01", f"{y}-12-31")):
                 yield a, b, self.count(a, b)
 
-    def pages(self, start: str, end: str, per_page: int = 100, start_page: int = 1) -> Iterator[tuple[int, list[LocPage]]]:
-        """Yield (result_page_number, pages) for one date slice."""
-        sp = start_page
+    def pages(self, start: str, end: str, per_page: int = 50, start_page: int = 1) -> Iterator[tuple[int, list[LocPage]]]:
+        """Yield (result_page_number, pages) for one date slice.
+
+        Pages carry full OCR text, so big result pages can time out on loc.gov's side (520/504).
+        When that happens we halve the page size (50 -> 25 -> 10 -> 5) and carry on from the same offset.
+        """
+        size = per_page
+        offset = (start_page - 1) * per_page
         while True:
-            data = self.get_json(self.search_params(start, end, sp, per_page))
+            sp = offset // size + 1
+            try:
+                data = self.get_json(self.search_params(start, end, sp, size))
+            except requests.HTTPError as e:
+                status = e.response.status_code if e.response is not None else 0
+                smaller = next((n for n in (25, 10, 5) if n < size and offset % n == 0), None)
+                if status >= 500 and smaller:
+                    print(f"  loc.gov {status} at {size}/page; retrying at {smaller}/page", flush=True)
+                    size = smaller
+                    continue
+                if status >= 500:
+                    print(f"  loc.gov {status}; skipping results {offset + 1}-{offset + size}", flush=True)
+                    offset += size
+                    self.skipped += size
+                    continue
+                raise
             results = data.get("results") or []
-            yield sp, [p for p in (parse_result(r) for r in results) if p]
+            yield offset // per_page + 1, [p for p in (parse_result(r) for r in results) if p]
             pag = data.get("pagination") or {}
             if not pag.get("next") or not results:
                 return
-            sp += 1
+            offset += size
 
 
 def _as_list(v) -> list[str]:

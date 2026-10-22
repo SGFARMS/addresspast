@@ -10,6 +10,9 @@ log="$(mktemp)"
 status=${PIPESTATUS[0]}
 encode() { tail -n "${1:-60}" "$log" | cut -c1-300 | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\r//g;s/\n/%0A/g'; }
 if [ "$status" -ne 0 ]; then
+  # Summary lines first (test runners print them at the end, after long failure details)
+  summary=$(grep -E '✘|✗|[0-9]+ (failed|passed|flaky)|^ERROR|Error:|error TS|FAILED' "$log" | tail -n 25 | cut -c1-300 | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\r//g;s/\n/%0A/g')
+  [ -n "$summary" ] && echo "::error title=${title} summary::${summary}"
   echo "::error title=${title} failed::$(encode 60)"
 elif [ "${NOTICE_ON_SUCCESS:-0}" = "1" ]; then
   echo "::notice title=${title}::$(encode 45)"

@@ -50,6 +50,7 @@ class Stats:
     source: str
     dry_run: bool
     loc_requests: int = 0
+    loc_results_skipped: int = 0
     pages_seen: int = 0
     pages_skipped_scanned: int = 0
     candidates: int = 0
@@ -212,6 +213,8 @@ class Harvester:
                     self.stats.loc_requests = loc.requests_made
                     self.stats.resume_from = f"--start-year {year} --start-page {sp}"
                     self.handle_loc_pages(pages, year)
+                    if sp % 10 == 0:
+                        print(f"  {year} page {sp}: seen {self.stats.pages_seen}, candidates {self.stats.candidates}", flush=True)
                     if self.stop or (self.args.max_pages and self.stats.pages_seen >= self.args.max_pages):
                         self.stats.stopped_reason = self.stats.stopped_reason or "max pages reached"
                         return
@@ -220,6 +223,7 @@ class Harvester:
             self.stats.stopped_reason = str(e)
         finally:
             self.stats.loc_requests = loc.requests_made
+            self.stats.loc_results_skipped = loc.skipped
 
     def handle_loc_pages(self, pages, year: str):
         s = self.stats
@@ -319,7 +323,7 @@ def summarize(stats: Stats, out_dir: str):
         f"## Harvest ({s.source}{', dry run' if s.dry_run else ''})",
         "",
         "| | |", "|---|---|",
-        f"| loc.gov requests | {s.loc_requests} |",
+        f"| loc.gov requests | {s.loc_requests} (results skipped after server errors: {s.loc_results_skipped}) |",
         f"| Pages seen | {s.pages_seen} |",
         f"| Already scanned (skipped) | {s.pages_skipped_scanned} |",
         f"| Candidates after pre-filter | {s.candidates} |",
@@ -354,7 +358,7 @@ def main(argv=None):
     ap.add_argument("--start-year", type=int, default=1860)
     ap.add_argument("--end-year", type=int, default=1963)
     ap.add_argument("--start-page", type=int, default=1, help="resume inside --start-year")
-    ap.add_argument("--per-page", type=int, default=100)
+    ap.add_argument("--per-page", type=int, default=50)
     ap.add_argument("--max-pages", type=int, default=0, help="stop after this many search-result pages (0 = no limit)")
     ap.add_argument("--dry-run", action="store_true", help="no database reads or writes")
     ap.add_argument("--extract-limit", type=int, default=0, help="dry run only: send this many candidates to Claude")

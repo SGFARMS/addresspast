@@ -52,7 +52,7 @@ test.describe("app (preview)", () => {
     await page.getByRole("option").first().click();
     await page.getByRole("button", { name: /1932/ }).click();
     await expect(page.getByText("Exact address").first()).toBeVisible();
-    await expect(page.getByText(/High match|Medium match|Low match/)).toBeVisible();
+    await expect(page.getByTitle(/Match confidence/)).toBeVisible();
     await expect(page.getByRole("link", { name: "View original newspaper page" }).first()).toBeVisible();
   });
 
