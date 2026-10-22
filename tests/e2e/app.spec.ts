@@ -101,3 +101,23 @@ test.describe("app (preview)", () => {
 // Phase 2 / Phase 3 flows: specs are in place and skipped until those features ship.
 test.skip("dispute form submits (Phase 2)", async () => {});
 test.skip("checkout creates a report (Phase 3)", async () => {});
+
+test.describe("admin review", () => {
+  test("password gate and queue", async ({ page }) => {
+    await page.goto("/admin");
+    await page.getByLabel("Password").fill("wrong");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByText("That password didn't work.")).toBeVisible();
+    await page.getByLabel("Password").fill("e2e-admin");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
+    await expect(page.getByText(/Demo data/)).toBeVisible();
+    await page.getByRole("button", { name: /Held records/ }).click();
+    await expect(page.getByText("Held records", { exact: false }).first()).toBeVisible();
+  });
+
+  test("queue API refuses without the cookie", async ({ request }) => {
+    const r = await request.get("/api/admin/queue");
+    expect(r.status()).toBe(401);
+  });
+});

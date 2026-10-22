@@ -45,6 +45,16 @@ The service key is tenant-scoped: rows get `tenant_id` from its claim, and it ne
 | `UPSTASH_REDIS_REST_URL` / `_TOKEN` | Shared per-IP rate limits | Per-instance memory limits (dev only) |
 | `PREVIEW_SECRET` | `/preview?key=…` waitlist bypass | Waitlist only |
 | `CRON_SECRET` | Auth for `/api/cron/*` | Cron route is open |
+| `ADMIN_PASSWORD` | The owner review area at `/admin` | `/admin` is closed |
+
+## Review area (`/admin`)
+
+Owner-only, password from `ADMIN_PASSWORD`. Three queues:
+- **Removal requests**: fast-lane requests (family/owner/tenant, record from the last 10 years) are already hidden. *Remove record* keeps it hidden, *Keep it public* restores it.
+- **Held records**: boarding houses, hotels and businesses the harvester flagged. *Approve* lets the nightly dedupe publish it; *Hide* removes it.
+- **Old addresses**: Claude's suggested modern location for pre-1960 addresses. *Accept* places the record there, labeled "historic street".
+
+The header shows total records, public records, and harvest spend against the $20 cap. Without a database it shows demo items.
 
 Tokens and cost per AI feature are logged to `ai_usage`.
 

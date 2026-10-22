@@ -112,6 +112,7 @@ export const siteConfig = {
     ask: { requests: 10, window: "1 m" },
     waitlist: { requests: 5, window: "10 m" },
     removal: { requests: 5, window: "1 h" },
+    admin: { requests: 10, window: "10 m" },
   },
 
   // ── Theme tokens (see app/globals.css) ───────────────────────────────

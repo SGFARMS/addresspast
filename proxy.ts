@@ -10,5 +10,5 @@ export function proxy(request: Parameters<typeof intl>[0]) {
 }
 
 export const config = {
-  matcher: ["/((?!api|preview|_next|_vercel|.*\\..*).*)"],
+  matcher: ["/((?!api|preview|admin|_next|_vercel|.*\\..*).*)"],
 };

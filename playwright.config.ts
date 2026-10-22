@@ -16,6 +16,6 @@ export default defineConfig({
     command: `npm run start -- -p ${PORT}`,
     url: `http://localhost:${PORT}/api/places/suggest?q=`,
     reuseExistingServer: !process.env.CI,
-    env: { PREVIEW_SECRET: "e2e-preview", SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" },
+    env: { PREVIEW_SECRET: "e2e-preview", ADMIN_PASSWORD: "e2e-admin", SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" },
   },
 });
