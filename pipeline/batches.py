@@ -13,76 +13,9 @@ from anthropic import Anthropic
 from .common.config import MODEL_SMART
 from .common.db import db
 from .common.runlog import PipelineRun
-from .common.scrub import scrub_names
-from .lang import EXTRACTION_SYSTEM, detect_language
+from .extract import extraction_params, items_from_message, write_items
 
 client = Anthropic()
-
-EXTRACT_TOOL = {
-    "name": "record_deaths",
-    "description": "Record each qualifying New Mexico death found on the page.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "address_raw": {"type": "string"},
-                        "city": {"type": ["string", "null"]},
-                        "county": {"type": ["string", "null"]},
-                        "location_precision": {"type": "string", "enum": ["street_address", "intersection", "landmark", "city_only"]},
-                        "incident_date": {"type": ["string", "null"]},
-                        "cause_category": {"type": "string", "enum": ["natural", "accident", "homicide", "suicide", "fire", "unknown"]},
-                        "summary": {"type": "string"},
-                        "confidence": {"type": "number"},
-                    },
-                    "required": ["address_raw", "location_precision", "cause_category", "summary", "confidence"],
-                },
-            }
-        },
-        "required": ["items"],
-    },
-}
-
-
-def extraction_params(text: str) -> dict:
-    return {
-        "model": MODEL_SMART,
-        "max_tokens": 2000,
-        "system": [{"type": "text", "text": EXTRACTION_SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        "tools": [EXTRACT_TOOL],
-        "tool_choice": {"type": "tool", "name": "record_deaths"},
-        "messages": [{"role": "user", "content": text[:60000]}],
-    }
-
-
-def write_items(page: dict, items: list[dict]) -> int:
-    """Shared by live extraction and batch results. Scrubs names before anything is stored."""
-    rows = []
-    lang = detect_language(page.get("text", ""))
-    for it in items:
-        summary, _hits = scrub_names(it.get("summary"))
-        rows.append({
-            "source_url": page["url"],
-            "source_name": page.get("source_name"),
-            "published_date": page.get("published_date"),
-            "incident_date": it.get("incident_date"),
-            "address_raw": it.get("address_raw") or "",
-            "city": it.get("city"),
-            "county": it.get("county"),
-            "location_precision": it.get("location_precision"),
-            "cause_category": it.get("cause_category", "unknown"),
-            "summary": summary,
-            "summary_scrubbed": True,
-            "confidence": max(0.0, min(1.0, float(it.get("confidence", 0.5)))),
-            "source_language": lang,
-        })
-    if rows:
-        db().table("ap_incidents").upsert(rows, on_conflict="source_url,address_raw", ignore_duplicates=True).execute()
-    db().table("ap_scanned_pages").upsert({"url": page["url"]}).execute()
-    return len(rows)
 
 
 def submit(path: str, chunk: int = 5000):
@@ -124,10 +57,9 @@ def poll():
                     continue
                 msg = entry.result.message
                 run.ai("extract", MODEL_SMART, msg.usage, batched=True)
-                block = next((b for b in msg.content if b.type == "tool_use"), None)
                 page = pages.get(entry.custom_id)
-                if block and page:
-                    written += write_items(page, block.input.get("items", []))
+                if page:
+                    written += write_items(page, items_from_message(msg), MODEL_SMART)
             run.items_out = written
         db().table("ap_pipeline_runs").update({"status": "ok", "items_out": written}).eq("id", row["id"]).execute()
         print(batch.id, "wrote", written)

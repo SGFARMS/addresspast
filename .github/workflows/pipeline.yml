@@ -36,20 +36,26 @@ jobs:
           cache-dependency-path: pipeline/requirements.txt
       - run: pip install -r pipeline/requirements.txt
 
-      - name: Daily harvest
-        if: github.event.schedule == '7 12 * * *' || inputs.job == 'harvest'
+      - name: Database connected?
+        id: db
         run: |
-          if [ -f pipeline/harvest.py ]; then python -m pipeline.harvest --rss; else echo "harvest.py not in repo yet"; fi
-          if [ -f pipeline/geocode.py ]; then python -m pipeline.geocode; else echo "geocode.py not in repo yet"; fi
+          if [ -z "$SUPABASE_URL" ]; then echo "Database not connected yet (baas connect-tenant-site); skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"
+          else echo "ok=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Daily harvest
+        if: steps.db.outputs.ok == 'true' && (github.event.schedule == '7 12 * * *' || inputs.job == 'harvest')
+        run: |
+          python -m pipeline.harvest --rss --max-cost 1
+          python -m pipeline.geocode
           python -m pipeline.historic_geo --limit 100
 
       - name: Nightly dedupe
-        if: github.event.schedule == '37 8 * * *' || inputs.job == 'nightly'
+        if: steps.db.outputs.ok == 'true' && (github.event.schedule == '37 8 * * *' || inputs.job == 'nightly')
         run: |
           python -m pipeline.dedupe --limit 500
           python -m pipeline.translate --limit 500
           python -m pipeline.parcels match
 
       - name: Collect batches
-        if: github.event.schedule == '17 */3 * * *' || inputs.job == 'batches'
+        if: steps.db.outputs.ok == 'true' && (github.event.schedule == '17 */3 * * *' || inputs.job == 'batches')
         run: python -m pipeline.batches poll

@@ -1,0 +1,89 @@
+# Run the newspaper harvester by hand (Actions → harvest → Run workflow).
+# dry-run: no database. extract_limit 0 = just count candidates and estimate cost;
+#          extract_limit 150 = also extract 150 candidates into records.csv for a spot-check.
+# live:    writes to the BaaS tenant. Spend is capped across all runs by AP_HARVEST_CAP_USD ($20).
+# Results: the run summary, plus the "harvest-out" artifact (records.csv, stats.json, ...).
+name: harvest
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "loc (Chronicling America) or rss"
+        required: true
+        default: loc
+        type: choice
+        options: [loc, rss]
+      mode:
+        description: "dry-run (no database) or live"
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, live]
+      start_year:
+        description: "first year (loc)"
+        default: "1880"
+      end_year:
+        description: "last year (loc)"
+        default: "1963"
+      start_page:
+        description: "resume page inside start_year (from the last run's summary)"
+        default: "1"
+      extract_limit:
+        description: "dry-run: how many candidates to send to Claude (0 = none)"
+        default: "0"
+      max_cost:
+        description: "USD cap for this run"
+        default: "20"
+      max_pages:
+        description: "stop after this many newspaper pages (0 = no limit)"
+        default: "0"
+
+concurrency:
+  group: harvest
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      AP_HARVEST_CAP_USD: "20"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+      - run: pip install -r pipeline/requirements.txt
+
+      - name: Check secrets
+        run: |
+          if [ "${{ inputs.mode }}" = "live" ] && [ -z "$SUPABASE_URL" ]; then
+            echo "::error::Live mode needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (baas Droplet ops → connect-tenant-site)"; exit 1; fi
+          if [ "${{ inputs.extract_limit }}" != "0" ] || [ "${{ inputs.mode }}" = "live" ]; then
+            if [ -z "$ANTHROPIC_API_KEY" ]; then echo "::error::Add the ANTHROPIC_API_KEY repo secret"; exit 1; fi; fi
+
+      - name: Harvest
+        run: |
+          ARGS="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }} --out harvest-out"
+          if [ "${{ inputs.source }}" = "loc" ]; then
+            ARGS="$ARGS --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --start-page ${{ inputs.start_page }} --max-pages ${{ inputs.max_pages }}"
+          fi
+          if [ "${{ inputs.mode }}" = "dry-run" ]; then ARGS="$ARGS --dry-run --extract-limit ${{ inputs.extract_limit }}"; fi
+          python -m pipeline.harvest $ARGS
+
+      - name: Geocode new records
+        if: inputs.mode == 'live'
+        run: python -m pipeline.geocode --limit 5000
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: harvest-out
+          path: harvest-out/
+          retention-days: 30

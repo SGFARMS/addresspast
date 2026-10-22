@@ -1,45 +1,44 @@
 # Data pipeline
 
-`harvest.py` and `geocode.py` are your existing scripts. Drop them into this folder unchanged. Everything else here is new and is designed to plug into them.
-
 | File | What it does | Schedule |
 |---|---|---|
-| `lang.py` | Spanish keywords, language detection, bilingual extraction prompt | used by harvest |
-| `triage.py` | Haiku first pass: is there an NM death with a location? Only "yes" pages go to Sonnet | used by harvest |
-| `batches.py` | Historical backlog via Message Batches (50% off) + cached prompt | `submit` by hand, `poll` every 3h |
-| `dedupe.py` | Groups incidents into `events`, with a Claude check per candidate pair | nightly |
-| `historic_geo.py` | Claude suggests modern locations for pre-1960 addresses that didn't geocode; suggestions go to the review queue | daily |
+| `harvest.py` | Free sources → strict pre-filter → Haiku (Sonnet for unclear records) → `ap_incidents` | RSS daily; Chronicling America by hand (`harvest` workflow) |
+| `sources/loc.py` | Library of Congress loc.gov API, NM papers, English + Spanish, paced under 20 requests/min | used by harvest |
+| `sources/rss.py` | Local news feeds (Journal, KRQE, KOB, KOAT, News-Bulletin, Observer, Source NM, Searchlight) | used by harvest |
+| `prefilter.py` | Keeps only text near a death keyword AND a pilot town; caps each page at 12k characters | used by harvest |
+| `extract.py` | Extraction tool + prompt, Sonnet escalation rules, name scrubbing, review flags | harvest, batches |
+| `geocode.py` | Census Geocoder → Photon → town centroid; pre-1960 street addresses go to review | daily, after harvest |
+| `places_nm.py` | Pilot towns, OCR spellings, counties, centroids | shared |
+| `lang.py` | English/Spanish keywords, language detection, prompts | shared |
+| `batches.py` | Optional: backlog via Message Batches (50% off) | `submit` by hand, `poll` every 3h |
+| `dedupe.py` | Groups incidents into events, with a Claude check per candidate pair | nightly |
+| `historic_geo.py` | Claude suggests modern locations for pre-1960 addresses; suggestions go to review | daily |
 | `parcels.py` | Load county parcel GeoJSON and attach street-level records to lots | `load` by hand, `match` nightly |
-| `translate.py` | Fills `events.summary_es` | nightly |
-| `common/runlog.py` | Every run goes to `pipeline_runs`, every Claude call to `ai_usage`, with a per-run spend cap | all |
+| `translate.py` | Fills `ap_events.summary_es` | nightly |
+| `common/runlog.py` | Every run → `ap_pipeline_runs`, every Claude call → `ap_ai_usage`, spend caps | all |
 | `common/scrub.py` | Name scrubber, run before any summary is stored | all |
 
-## Wiring into `harvest.py` (about 10 lines)
+## Running the harvester
 
-```python
-from pipeline.lang import has_keyword, EXTRACTION_SYSTEM
-from pipeline.triage import worth_extracting
-from pipeline.batches import extraction_params, write_items
-from pipeline.common.runlog import PipelineRun
+Actions → **harvest** → Run workflow. Start with a dry run:
 
-with PipelineRun("harvest_rss") as run:
-    for page in pages:                                   # your existing loop
-        if not has_keyword(page["text"]):                # now matches Spanish too
-            continue
-        run.items_in += 1
-        if not worth_extracting(page["text"], run):      # cheap Haiku gate
-            continue
-        msg = client.messages.create(**extraction_params(page["text"]))  # Sonnet, cached system prompt
-        run.ai("extract", msg.model, msg.usage)
-        block = next(b for b in msg.content if b.type == "tool_use")
-        run.items_out += write_items(page, block.input["items"])   # scrubs names, upserts, marks scanned
-```
+1. `mode: dry-run`, `extract_limit: 0`, a few years: counts candidates and estimates the Claude cost. No keys needed.
+2. `mode: dry-run`, `extract_limit: 150`: extracts 150 candidates into `records.csv` (in the run's `harvest-out` artifact) for a spot-check. Needs the `ANTHROPIC_API_KEY` repo secret.
+3. `mode: live`: writes to the database and geocodes. Needs the database secrets from the baas `connect-tenant-site` task.
 
-For the 1860s–1963 backlog, write pages to a JSONL file and run `python -m pipeline.batches submit pages.jsonl` instead of calling Claude live.
+The run summary says where it stopped and the exact `start_year` / `start_page` to resume from.
 
-`geocode.py` needs one change: when a pre-1960 street address fails or falls back to the city centroid, set `geocode_status = 'failed'` or `'fallback'`. `historic_geo.py` picks those up.
+### What gets kept
+- A page is sent to Claude only if a death keyword (English or Spanish) appears within ~700 characters of a pilot town, or, for papers printed in Albuquerque/Belen/Bernalillo/Los Lunas/Rio Rancho, near a local cue like "street" or "his home".
+- Haiku extracts first. Sonnet re-reads the page when Haiku is unsure (confidence 0.3–0.6) or names a specific house with confidence under 0.8. Sonnet may use at most 40% of a run's budget.
+- Suicides stay labeled as suicide. Apartment units are kept in `unit` and the site says "this building".
+- Boarding houses, hotels and businesses get `needs_review = true` and stay off the public site until reviewed.
+- Article text is only held in memory. We store the source link, structured fields and our own one-line summary (names scrubbed).
 
-> **Nominatim:** if `geocode.py` falls back to the public Nominatim server, keep it to at most 1 request per second, send an identifying User-Agent, and cache results. That's their usage policy.
+### Spend
+- `AP_HARVEST_CAP_USD` (default $20) is one cap across all harvest runs, measured from `ap_ai_usage`.
+- `--max-cost` caps a single run; `AP_MAX_RUN_COST_USD` caps other jobs.
+- Also set a monthly spend limit in the Anthropic Console.
 
 ## Parcel data
 
@@ -47,7 +46,3 @@ For the 1860s–1963 backlog, write pages to a JSONL file and run `python -m pip
   `python -m pipeline.parcels load bernalillo parcels.geojson --apn-field UPC --situs-field SITUS`. Check the real field names first.
 - **Valencia County:** confirm a public parcel download exists. If not, ask the assessor's office for a GIS export.
 
-## Cost controls
-
-- `AP_MAX_RUN_COST_USD` (default $5) stops any single run once it passes that amount.
-- Also set a monthly spend limit in the Anthropic Console.
