@@ -2,6 +2,10 @@
 # Runs on GitHub Actions instead of Vercel Cron: Python-native, no function timeouts.
 # Scheduled runs write to the live site, so they only run while pipeline/LIVE_ON exists (added once
 # Joe has spot-checked the first records). "Run workflow" by hand always works.
+# Scheduled runs are also gated at the job level by the repo variable PIPELINE_LIVE: until it is
+# "true" (Settings → Secrets and variables → Actions → Variables), a scheduled run is skipped
+# before a runner starts, so switched-off runs bill 0 Actions minutes. Going live = add
+# pipeline/LIVE_ON *and* set PIPELINE_LIVE to true. Manual runs are never gated by the variable.
 name: pipeline
 
 on:
@@ -22,6 +26,8 @@ concurrency:
 
 jobs:
   run:
+    # Job-level gate: skipped scheduled runs never start a runner (0 billed minutes).
+    if: github.event_name != 'schedule' || vars.PIPELINE_LIVE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
