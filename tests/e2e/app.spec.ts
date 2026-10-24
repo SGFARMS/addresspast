@@ -72,7 +72,7 @@ test.describe("app (preview)", () => {
     await page.getByRole("option").first().click();
     const hidden = page.getByText(/natural-cause record.*hidden by default/);
     await expect(hidden).toBeVisible();
-    await page.getByRole("button", { name: "Show" }).click();
+    await page.getByRole("button", { name: "Show", exact: true }).click();
     await expect(hidden).toHaveCount(0);
   });
 
