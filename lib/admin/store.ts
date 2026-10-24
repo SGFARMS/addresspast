@@ -19,7 +19,7 @@ const supabaseStore: AdminStore = {
     const db = serviceClient();
     const [inc, sug, dis, incCount, evCount, spend, run] = await Promise.all([
       db.from("ap_incidents")
-        .select("id,source_name,source_url,published_date,incident_date,address_raw,unit,city,county,place_kind,cause_category,summary,confidence,review_reason,created_at")
+        .select("id,source_name,source_url,published_date,incident_date,address_raw,unit,city,county,place_kind,cause_category,summary,confidence,review_reason,geocode_status,created_at")
         .eq("needs_review", true).eq("hidden", false).order("created_at").limit(200),
       db.from("ap_location_suggestions")
         .select("id,incident_id,suggested_lat,suggested_lng,suggested_address,rationale,ap_incidents(address_raw,city,incident_year,summary,source_url)")
@@ -36,8 +36,11 @@ const supabaseStore: AdminStore = {
       id: r.id, sourceName: r.source_name, sourceUrl: r.source_url, publishedDate: r.published_date,
       incidentDate: r.incident_date, addressRaw: r.address_raw, unit: r.unit, city: r.city, county: r.county,
       placeKind: r.place_kind, cause: r.cause_category, summary: r.summary,
-      confidence: r.confidence == null ? null : Number(r.confidence), reviewReason: r.review_reason, createdAt: r.created_at,
-    }));
+      confidence: r.confidence == null ? null : Number(r.confidence), reviewReason: r.review_reason,
+      outsideArea: r.geocode_status === "failed", createdAt: r.created_at,
+    }))
+      // Records in our counties first; out-of-area ones (Gallup, Santa Fe, El Paso...) at the end.
+      .sort((a, b) => Number(a.outsideArea) - Number(b.outsideArea));
     const suggestions = must<any[]>(sug, "suggestions").map<ReviewSuggestion>((r) => ({
       id: r.id, incidentId: r.incident_id, addressRaw: r.ap_incidents?.address_raw ?? "", city: r.ap_incidents?.city ?? null,
       year: r.ap_incidents?.incident_year ?? null, summary: r.ap_incidents?.summary ?? null, sourceUrl: r.ap_incidents?.source_url ?? "",
@@ -105,12 +108,12 @@ const demo = {
     { id: 9001, sourceName: "Daily territorial paper (sample)", sourceUrl: "https://www.loc.gov/collections/chronicling-america/",
       publishedDate: "1904-05-12", incidentDate: "1904-05-11", addressRaw: "Sample Hotel, Railroad Avenue", unit: null,
       city: "Albuquerque", county: "Bernalillo", placeKind: "boarding_house_or_hotel", cause: "accident",
-      summary: "A fatal fall at a downtown hotel was reported.", confidence: 0.7, reviewReason: "boarding house or hotel",
+      summary: "A fatal fall at a downtown hotel was reported.", confidence: 0.7, reviewReason: "boarding house or hotel", outsideArea: false,
       createdAt: "2026-10-21T12:00:00Z" },
     { id: 9002, sourceName: "Valley weekly (sample)", sourceUrl: "https://www.loc.gov/collections/chronicling-america/",
       publishedDate: "1931-08-02", incidentDate: "1931-08", addressRaw: "Sample Mercantile Co.", unit: null,
       city: "Belen", county: "Valencia", placeKind: "business", cause: "homicide",
-      summary: "A fatal shooting at a store was reported.", confidence: 0.65, reviewReason: "business address",
+      summary: "A fatal shooting at a store was reported.", confidence: 0.65, reviewReason: "business address", outsideArea: false,
       createdAt: "2026-10-21T12:05:00Z" },
   ] as ReviewIncident[],
   suggestions: [

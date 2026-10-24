@@ -137,6 +137,11 @@ function IncidentCard({ i, busy, act }: { i: ReviewIncident; busy: boolean; act:
   return (
     <Card>
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">{i.reviewReason ?? "Held"} · {i.cause}</p>
+      {i.outsideArea && (
+        <p className="mt-1 text-xs font-medium text-ink-2">
+          Outside Bernalillo, Valencia and Sandoval counties. Approving won&apos;t put it on the map; Hide is fine.
+        </p>
+      )}
       <p className="mt-1 font-medium">{i.addressRaw}{i.unit ? ` (${i.unit})` : ""}{i.city ? `, ${i.city}` : ""}</p>
       <p className="mt-1 text-sm text-ink-2">{i.summary}</p>
       <p className="mt-1 text-xs text-ink-3">
