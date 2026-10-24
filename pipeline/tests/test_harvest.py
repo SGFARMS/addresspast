@@ -117,6 +117,10 @@ def test_geocode_rules(monkeypatch):
                                                  "properties": {"name": "New York", "osm_value": "hamlet", "county": "Cibola County"}})
     ny = g.geocode_row({"address_raw": "", "city": "New York", "county": None, "location_precision": "city_only", "incident_year": 1912})
     assert ny["geocode_status"] == "failed" and ny["lat"] is None
+    # ...nor on a re-check, after the first placement wrote Photon's county onto the record.
+    again = g.geocode_row({"address_raw": "", "city": "New York", "county": "Cibola", "location_precision": "city_only",
+                           "incident_year": 1912}, recheck=True)
+    assert again["geocode_status"] == "failed"
 
 
 def test_spot_check_holds_every_record(monkeypatch):

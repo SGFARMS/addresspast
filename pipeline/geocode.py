@@ -109,35 +109,45 @@ _KNOWN_NM = {n.lower() for n in NM_PLACE_NAMES}
 _NM_COUNTY_NAMES = set(NM_COUNTIES)
 
 
+def _norm_county(c: str | None) -> str:
+    return (c or "").replace(" County", "").replace(" county", "").strip().lower()
+
+
 def plausibly_nm(city: str, county: str | None) -> bool:
     """Is this record really about a New Mexico town? Papers carried wire news from everywhere, and some
     out-of-state names exist as tiny NM spots too ("New York" in Cibola County). Accept a statewide
     match only for a well-known NM town, or when the record itself names a New Mexico county."""
     if city.strip().lower() in _KNOWN_NM:
         return True
-    c = (county or "").replace(" County", "").replace(" county", "").strip().lower()
-    return c in _NM_COUNTY_NAMES
+    return _norm_county(county) in _NM_COUNTY_NAMES
 
 
-def nm_town(name: str | None, county: str | None = None) -> Town | None:
-    """Any New Mexico town, looked up on Photon (OpenStreetMap), for places outside the pilot list."""
+def nm_town(name: str | None, county: str | None = None, recheck: bool = False) -> Town | None:
+    """Any New Mexico town, looked up on Photon (OpenStreetMap), for places outside the pilot list.
+
+    recheck: the record was placed before, so its county may be one this geocoder filled in from
+    Photon itself; a county that merely repeats Photon's answer is then no evidence the place is in NM."""
     if not name or not name.strip() or not plausibly_nm(name, county):
         return None
     key = "t:" + name.strip().lower()
     if key in _cache:
-        return _cache[key]  # type: ignore[return-value]
-    f = photon(f"{name.strip()}, New Mexico")
-    town = None
-    if f:
-        lng, lat = f["geometry"]["coordinates"][:2]
-        props = f.get("properties") or {}
-        label = props.get("name") or ""
-        kind = props.get("osm_value") or props.get("type") or ""
-        if kind in _PLACE_KINDS and in_nm(lat, lng) and name_matches(name, label):
-            county = (props.get("county") or "").replace(" County", "").strip()  # keep OSM's casing (McKinley)
-            town = Town(label, county, float(lat), float(lng), ())
-    _cache[key] = town
-    return town
+        town = _cache[key]
+    else:
+        town = None
+        f = photon(f"{name.strip()}, New Mexico")
+        if f:
+            lng, lat = f["geometry"]["coordinates"][:2]
+            props = f.get("properties") or {}
+            label = props.get("name") or ""
+            kind = props.get("osm_value") or props.get("type") or ""
+            if kind in _PLACE_KINDS and in_nm(lat, lng) and name_matches(name, label):
+                osm_county = (props.get("county") or "").replace(" County", "").strip()  # keep OSM's casing (McKinley)
+                town = Town(label, osm_county, float(lat), float(lng), ())
+        _cache[key] = town
+    if (recheck and town and name.strip().lower() not in _KNOWN_NM
+            and _norm_county(county) == _norm_county(town.county)):
+        return None
+    return town  # type: ignore[return-value]
 
 
 def _county_name(c: str) -> str | None:
@@ -147,7 +157,7 @@ def _county_name(c: str) -> str | None:
     return c if any(ch.isupper() for ch in c) else c.title()
 
 
-def resolve_town(row: dict) -> Town | None:
+def resolve_town(row: dict, recheck: bool = False) -> Town | None:
     """Pilot towns from the built-in list first (with OCR variants); anywhere else in NM via Photon."""
     t = town_by_name(row.get("city"))
     if t:
@@ -155,13 +165,13 @@ def resolve_town(row: dict) -> Town | None:
     found = find_towns(f"{row.get('address_raw') or ''} {row.get('city') or ''}")
     if found:
         return found[0]
-    return nm_town(row.get("city"), row.get("county"))
+    return nm_town(row.get("city"), row.get("county"), recheck)
 
 
-def geocode_row(row: dict) -> dict:
+def geocode_row(row: dict, recheck: bool = False) -> dict:
     """Return the ap_incidents update for one row (pure apart from the HTTP lookups)."""
     now = datetime.now(timezone.utc).isoformat()
-    town = resolve_town(row)
+    town = resolve_town(row, recheck)
     if not town:
         # Clear any earlier placement so a re-check can take a wrong pin off the map.
         return {"geocode_status": "failed", "geocode_source": None, "geocoded_at": now,
@@ -229,7 +239,7 @@ def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False):
     with PipelineRun("geocode") as run:
         for r in rows:
             run.items_in += 1
-            upd = geocode_row(r)
+            upd = geocode_row(r, recheck=recheck_towns)
             db().table("ap_incidents").update(upd).eq("id", r["id"]).execute()
             if r.get("event_id"):
                 # The record already sits on the map: move (or remove) its event to match.
