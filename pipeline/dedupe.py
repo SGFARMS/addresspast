@@ -52,6 +52,7 @@ def ensure_events(run) -> list[dict]:
         db().table("ap_incidents").select(FIELDS)
         .is_("event_id", "null").eq("hidden", False).eq("needs_review", False)
         .not_.is_("geocode_status", "null")
+        .neq("geocode_status", "failed")  # no New Mexico town: never becomes a public event
         .limit(5000).execute().data
     )
     for r in rows:

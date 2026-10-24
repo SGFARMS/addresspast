@@ -112,6 +112,12 @@ def test_geocode_rules(monkeypatch):
     sc = g.geocode_row({"address_raw": "", "city": "Silver City", "location_precision": "city_only", "incident_year": 1912})
     assert sc["geocode_status"] == "ok" and sc["county"] == "Grant" and sc["geocode_precision"] == "city"
 
+    # A wire story from New York must not land on the tiny "New York" in Cibola County, NM.
+    monkeypatch.setattr(g, "photon", lambda q: {"geometry": {"coordinates": [-107.527, 35.058]},
+                                                 "properties": {"name": "New York", "osm_value": "hamlet", "county": "Cibola County"}})
+    ny = g.geocode_row({"address_raw": "", "city": "New York", "county": None, "location_precision": "city_only", "incident_year": 1912})
+    assert ny["geocode_status"] == "failed" and ny["lat"] is None
+
 
 def test_spot_check_holds_every_record(monkeypatch):
     monkeypatch.setenv("AP_HOLD_FOR_REVIEW", "1")

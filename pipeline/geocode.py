@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from .places_nm import Town, find_towns, town_by_name
+from .places_nm import NM_COUNTIES, NM_PLACE_NAMES, Town, find_towns, town_by_name
 
 CENSUS_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 PHOTON_URL = "https://photon.komoot.io/api/"
@@ -105,9 +105,23 @@ def name_matches(wanted: str, got: str) -> bool:
 _PLACE_KINDS = {"city", "town", "village", "hamlet", "locality", "suburb", "neighbourhood", "isolated_dwelling"}
 
 
-def nm_town(name: str | None) -> Town | None:
+_KNOWN_NM = {n.lower() for n in NM_PLACE_NAMES}
+_NM_COUNTY_NAMES = set(NM_COUNTIES)
+
+
+def plausibly_nm(city: str, county: str | None) -> bool:
+    """Is this record really about a New Mexico town? Papers carried wire news from everywhere, and some
+    out-of-state names exist as tiny NM spots too ("New York" in Cibola County). Accept a statewide
+    match only for a well-known NM town, or when the record itself names a New Mexico county."""
+    if city.strip().lower() in _KNOWN_NM:
+        return True
+    c = (county or "").replace(" County", "").replace(" county", "").strip().lower()
+    return c in _NM_COUNTY_NAMES
+
+
+def nm_town(name: str | None, county: str | None = None) -> Town | None:
     """Any New Mexico town, looked up on Photon (OpenStreetMap), for places outside the pilot list."""
-    if not name or not name.strip():
+    if not name or not name.strip() or not plausibly_nm(name, county):
         return None
     key = "t:" + name.strip().lower()
     if key in _cache:
@@ -141,7 +155,7 @@ def resolve_town(row: dict) -> Town | None:
     found = find_towns(f"{row.get('address_raw') or ''} {row.get('city') or ''}")
     if found:
         return found[0]
-    return nm_town(row.get("city"))
+    return nm_town(row.get("city"), row.get("county"))
 
 
 def geocode_row(row: dict) -> dict:
@@ -149,7 +163,9 @@ def geocode_row(row: dict) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     town = resolve_town(row)
     if not town:
-        return {"geocode_status": "failed", "geocode_source": None, "geocoded_at": now}
+        # Clear any earlier placement so a re-check can take a wrong pin off the map.
+        return {"geocode_status": "failed", "geocode_source": None, "geocoded_at": now,
+                "lat": None, "lng": None, "geocode_precision": None}
 
     base = {"city": row.get("city") or town.name, "county": row.get("county") or _county_name(town.county), "geocoded_at": now}
     at_town = {**base, "lat": town.lat, "lng": town.lng, "geocode_precision": "city", "geocode_source": "town_centroid"}
@@ -188,13 +204,19 @@ def geocode_row(row: dict) -> dict:
     return {**at_town, "geocode_status": "ok"}  # city_only: the town is exactly what we know
 
 
-def main(limit: int, retry_failed: bool = False):
+def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False):
     from .common.db import db
     from .common.runlog import PipelineRun
 
-    q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year")
-    # --retry-failed: records that found no town before (e.g. outside the old three-county list)
-    q = q.or_("geocode_status.is.null,geocode_status.eq.failed") if retry_failed else q.is_("geocode_status", "null")
+    q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year,event_id")
+    if recheck_towns:
+        # Re-place every town-level record with the current rules (fixes earlier wrong statewide matches).
+        q = q.or_("geocode_status.is.null,geocode_status.eq.failed,geocode_precision.eq.city")
+    elif retry_failed:
+        # Records that found no town before (e.g. outside the old three-county list)
+        q = q.or_("geocode_status.is.null,geocode_status.eq.failed")
+    else:
+        q = q.is_("geocode_status", "null")
     rows = (
         q
         .eq("hidden", False)
@@ -209,6 +231,9 @@ def main(limit: int, retry_failed: bool = False):
             run.items_in += 1
             upd = geocode_row(r)
             db().table("ap_incidents").update(upd).eq("id", r["id"]).execute()
+            if r.get("event_id"):
+                # The record already sits on the map: move (or remove) its event to match.
+                db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute()
             k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
             counts[k] = counts.get(k, 0) + 1
             run.items_out += 1 if upd["geocode_status"] == "ok" else 0
@@ -220,5 +245,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=2000)
     ap.add_argument("--retry-failed", action="store_true", help="also retry records that found no town before")
+    ap.add_argument("--recheck-towns", action="store_true", help="re-place every town-level record with the current rules")
     a = ap.parse_args()
-    main(a.limit, a.retry_failed)
+    main(a.limit, a.retry_failed, a.recheck_towns)
