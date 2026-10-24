@@ -182,6 +182,11 @@ class LocClient:
             pag = data.get("pagination") or {}
             total = int(pag.get("of") or 0)
             offset += size
+            if not results and offset == start_offset + size:
+                # An empty first answer is either a genuinely empty slice or loc.gov having a bad day;
+                # say which in the log so a run that "saw 0 pages" explains itself.
+                print(f"  loc.gov returned no results for {start}..{end}{' (' + self.city + ')' if self.city else ''}: "
+                      f"reported total {total}, keys {sorted(data)[:6]}", flush=True)
             yield offset, [p for p in (parse_result(r) for r in results) if p]
             if not pag.get("next") or not results:
                 return
