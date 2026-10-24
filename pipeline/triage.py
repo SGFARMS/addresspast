@@ -6,6 +6,7 @@
 """
 from anthropic import Anthropic
 
+from .common.ai import create_with_tool, tool_input
 from .common.config import MODEL_FAST
 from .lang import TRIAGE_SYSTEM
 
@@ -26,16 +27,16 @@ TOOL = {
 
 
 def worth_extracting(text: str, run=None, max_chars: int = 24000) -> bool:
-    msg = _client.messages.create(
+    msg = create_with_tool(
+        _client,
+        "triage",
         model=MODEL_FAST,
         max_tokens=60,
         # The system prompt is identical for every page, so it's cached
         system=[{"type": "text", "text": TRIAGE_SYSTEM, "cache_control": {"type": "ephemeral"}}],
         tools=[TOOL],
-        tool_choice={"type": "tool", "name": "triage"},
         messages=[{"role": "user", "content": text[:max_chars]}],
     )
     if run is not None:
         run.ai("triage", MODEL_FAST, msg.usage)
-    block = next((b for b in msg.content if b.type == "tool_use"), None)
-    return bool(block and block.input.get("has_nm_death_with_location"))
+    return bool((tool_input(msg) or {}).get("has_nm_death_with_location"))

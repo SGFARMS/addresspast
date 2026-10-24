@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import threading
 
+from .common.ai import tool_input, tool_params
 from .common.config import MODEL_FAST, MODEL_SMART
 from .common.scrub import scrub_names
 from .lang import EXTRACTION_SYSTEM, detect_language
@@ -59,19 +60,18 @@ def client():
 
 
 def extraction_params(text: str, model: str = MODEL_SMART) -> dict:
-    return {
+    """Request params (also used for Message Batches). tool_choice fits the model: see common/ai.py."""
+    return tool_params({
         "model": model,
         "max_tokens": 2000,
         "system": [{"type": "text", "text": EXTRACTION_SYSTEM, "cache_control": {"type": "ephemeral"}}],
         "tools": [EXTRACT_TOOL],
-        "tool_choice": {"type": "tool", "name": "record_deaths"},
         "messages": [{"role": "user", "content": text[:60000]}],
-    }
+    }, "record_deaths")
 
 
 def items_from_message(msg) -> list[dict]:
-    block = next((b for b in msg.content if getattr(b, "type", None) == "tool_use"), None)
-    items = (block.input or {}).get("items", []) if block else []
+    items = (tool_input(msg) or {}).get("items", [])
     return [i for i in items if isinstance(i, dict) and (i.get("address_raw") or i.get("city"))]
 
 
@@ -94,7 +94,8 @@ def extract(text: str, run, allow_sonnet=lambda: True) -> tuple[list[dict], str]
     if items and needs_sonnet(items) and allow_sonnet():
         msg2 = client().messages.create(**extraction_params(text, MODEL_SMART))
         run.ai("harvest_extract_smart", MODEL_SMART, msg2.usage)
-        return items_from_message(msg2), MODEL_SMART
+        if tool_input(msg2) is not None:  # Sonnet answered through the tool; otherwise keep Haiku's read
+            return items_from_message(msg2), MODEL_SMART
     return items, MODEL_FAST
 
 

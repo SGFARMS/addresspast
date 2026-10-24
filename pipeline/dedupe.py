@@ -13,6 +13,7 @@ import argparse
 
 from anthropic import Anthropic
 
+from .common.ai import create_with_tool, tool_input
 from .common.config import MODEL_SMART
 from .common.db import db
 from .common.runlog import PipelineRun
@@ -84,16 +85,19 @@ def main(limit: int):
             cands = db().rpc("ap_dedupe_candidates", {"p_incident_id": r["id"]}).execute().data or []
             for c in cands:
                 other = db().table("ap_incidents").select(FIELDS).eq("id", c["candidate_id"]).single().execute().data
-                msg = client.messages.create(
+                msg = create_with_tool(
+                    client,
+                    "decide",
                     model=MODEL_SMART,
                     max_tokens=200,
                     system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
                     tools=[TOOL],
-                    tool_choice={"type": "tool", "name": "decide"},
                     messages=[{"role": "user", "content": f"A: {describe(r)}\nB: {describe(other)}\nDistance: {round(c.get('distance_m') or 0)} m"}],
                 )
                 run.ai("dedupe", MODEL_SMART, msg.usage)
-                d = next(b for b in msg.content if b.type == "tool_use").input
+                d = tool_input(msg)
+                if not d or "same_event" not in d:
+                    continue  # no usable answer: leave the pair unchecked so the next run asks again
                 a, b = sorted([r["id"], other["id"]])
                 db().table("ap_dedupe_checks").upsert({
                     "incident_a": a, "incident_b": b, "same_event": d["same_event"], "rationale": d.get("rationale"), "model": MODEL_SMART,

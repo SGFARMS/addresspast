@@ -117,3 +117,33 @@ def test_spot_check_holds_every_record(monkeypatch):
     house, hotel = to_rows(page, items)
     assert house["needs_review"] and house["review_reason"] == "spot-check"
     assert hotel["review_reason"] == "boarding house or hotel"  # the more specific reason wins
+
+
+def test_tool_choice_fits_the_model():
+    from types import SimpleNamespace
+
+    from pipeline.common.ai import create_with_tool, tool_input, tool_params
+    from pipeline.extract import extraction_params, items_from_message
+
+    assert extraction_params("x", "claude-haiku-5-5")["tool_choice"] == {"type": "tool", "name": "record_deaths"}
+    smart = extraction_params("x", "claude-sonnet-5-5")
+    assert smart["tool_choice"] == {"type": "auto"} and "record_deaths" in smart["system"][-1]["text"]
+    assert len(tool_params({"model": "m", "system": "s"}, "t")["system"]) == 2
+
+    text_only = SimpleNamespace(content=[SimpleNamespace(type="text", text="no deaths")])
+    assert tool_input(text_only) is None and items_from_message(text_only) == []
+
+    class Client:  # a model that rejects forced tool use, like Sonnet 5.5
+        def __init__(self):
+            self.calls = []
+            self.messages = self
+
+        def create(self, **p):
+            self.calls.append(p["tool_choice"])
+            if p["tool_choice"]["type"] == "tool":
+                raise RuntimeError('tool_choice: type "tool" and "any" are not supported for this model.')
+            return SimpleNamespace(content=[SimpleNamespace(type="tool_use", input={"ok": True})])
+
+    c = Client()
+    assert tool_input(create_with_tool(c, "t", model="claude-haiku-9", messages=[])) == {"ok": True}
+    assert c.calls == [{"type": "tool", "name": "t"}, {"type": "auto"}]
