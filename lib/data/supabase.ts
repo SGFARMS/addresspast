@@ -86,6 +86,29 @@ export const supabaseRepo: Repo = {
     }));
   },
 
+  async cityEvents(city, f) {
+    let q = serviceClient()
+      .from("ap_events")
+      .select("id,event_year,date_precision,record_type,cause_category,geocode_precision,verified,building_level,confidence")
+      .eq("hidden", false)
+      .eq("geocode_precision", "city")
+      .ilike("city", city)
+      .in("record_type", f.recordTypes)
+      .gte("confidence", f.minConfidence ?? 0)
+      .order("event_year", { ascending: true, nullsFirst: false })
+      .limit(500);
+    if (f.causes) q = q.in("cause_category", f.causes);
+    if (!f.includeNatural) q = q.neq("cause_category", "natural");
+    if (f.verifiedOnly) q = q.eq("verified", true);
+    const { data, error } = await q;
+    if (error) throw new Error(`cityEvents: ${error.message}`);
+    return (data ?? []).map<CheckItem>((x: any) => ({
+      id: x.id, year: x.event_year, datePrecision: x.date_precision, recordType: x.record_type, cause: x.cause_category,
+      precision: x.geocode_precision, verified: Boolean(x.verified), distanceM: 0,
+      buildingLevel: Boolean(x.building_level), predatesBuilding: false,
+    }));
+  },
+
   async cityDecades(f) {
     const rows = await rpc<any[]>("ap_api_city_decades", filterArgs(f));
     return rows.map<CityBucket>((x) => ({

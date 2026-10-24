@@ -57,7 +57,12 @@
     "atThisAddress": "En esta dirección",
     "nearbyHeading": "Cerca",
     "builtIn": "El edificio de este lote se construyó en {year}.",
-    "olderThanBuilding": "{count, plural, =1 {# registro aquí es anterior al edificio y puede referirse a una construcción anterior en el lote.} other {# registros aquí son anteriores al edificio y pueden referirse a una construcción anterior en el lote.}}"
+    "olderThanBuilding": "{count, plural, =1 {# registro aquí es anterior al edificio y puede referirse a una construcción anterior en el lote.} other {# registros aquí son anteriores al edificio y pueden referirse a una construcción anterior en el lote.}}",
+    "townShow": "Ver registros ubicados solo en {city}",
+    "townHeading": "{count, plural, =1 {# registro} other {# registros}} ubicados solo en {city} (sin lugar exacto)",
+    "townLoading": "Cargando registros de {city}…",
+    "townNone": "Todavía no hay registros de {city} solo a nivel de ciudad.",
+    "townFailed": "No se pudieron cargar esos registros. Inténtalo de nuevo en un momento."
   },
   "record": {
     "distance": "a {distance}",

@@ -117,3 +117,14 @@ test.describe("admin review", () => {
     expect(r.status()).toBe(401);
   });
 });
+
+test("town-level records list for a town badge", async ({ request }) => {
+  const res = await request.get("/api/city?city=Belen");
+  expect(res.ok()).toBeTruthy();
+  const j = await res.json();
+  expect(j.items.map((i: { year: number }) => i.year)).toContain(2021); // demo: Belen 2021, town-level
+  expect(j.items.every((i: { precision: string; cause: string }) => i.precision === "city" && i.cause !== "natural")).toBeTruthy();
+  const withNatural = await (await request.get("/api/city?city=Belen&natural=1")).json();
+  expect(withNatural.items.length).toBeGreaterThan(j.items.length);
+  expect((await request.get("/api/city?city=x")).status()).toBe(400);
+});
