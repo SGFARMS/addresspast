@@ -394,7 +394,7 @@ def summarize(stats: Stats, out_dir: str):
         f"| Candidates after pre-filter | {s.candidates} |",
         f"| Pages sent to Claude | {s.extracted_pages} (Sonnet re-checks: {s.sonnet_calls}) |",
         f"| Records found | {s.records} on {s.pages_with_records} pages |",
-        f"| Held for review (boarding house / business) | {s.needs_review} |",
+        f"| Held for review in /admin | {s.needs_review} |",
         f"| Errors | {s.errors}{' (first: ' + s.first_error + ')' if s.first_error else ''} |",
         f"| Claude cost | ${s.cost_usd:.4f} {json.dumps({k: round(v, 4) for k, v in s.cost_by_model.items()})} |",
         f"| Time | {s.elapsed_s / 60:.1f} min |",
