@@ -33,7 +33,6 @@ from .common.config import MODEL_FAST, MODEL_SMART
 from .common.runlog import BudgetExceeded, LocalRun, PipelineRun
 from .extract import extract, to_rows
 from .lang import detect_language, has_keyword
-from .places_nm import is_pilot_paper
 from .prefilter import build_prompt_text, candidate_windows
 
 # Papers printed in the pilot area (Chronicling America location_city values). Most local news is here.
@@ -284,7 +283,8 @@ class Harvester:
         for p in pages:
             if p.url in seen:
                 continue
-            local = is_pilot_paper(p.paper_cities)
+            # Every Chronicling America NM paper is local to its own town (statewide coverage).
+            local = True
             windows = candidate_windows(p.text, local_paper=local)
             if not windows:
                 plain.append(p.url)
@@ -445,11 +445,14 @@ def main(argv=None):
         if last == "done":
             print("Chronicling America backlog is already complete; nothing to resume.")
             return
+        if last and last.get("scope", "local") != args.scope:
+            print(f"Last run was scope '{last.get('scope', 'local')}'; starting scope '{args.scope}' from {args.start_year} "
+                  "(pages already read are skipped)", flush=True)
+            last = None
         if last:
             args.start_year, args.start_offset, args.start_city = last["year"], last["offset"], last.get("city")
             args.range_start = last.get("start_year", args.start_year)
             args.end_year = last.get("end_year", args.end_year)
-            args.scope = last.get("scope", args.scope)
             print(f"Resuming at {args.start_year} result {args.start_offset} ({args.start_city or 'all NM papers'})", flush=True)
     if not hasattr(args, "range_start"):
         args.range_start = args.start_year

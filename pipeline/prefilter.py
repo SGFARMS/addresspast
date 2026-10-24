@@ -1,9 +1,9 @@
-"""Strict keyword pre-filter: only text near a death keyword AND a pilot-area place goes to Claude.
+"""Strict keyword pre-filter: only text near a death keyword AND a New Mexico place goes to Claude.
 
 A Chronicling America page is a whole newspaper page (often 30k+ characters of OCR).
 Instead of sending the page, we cut windows around each death keyword and keep a window
-only if it also mentions a pilot town (or, for papers printed in the pilot area, a local
-street cue). Overlapping windows are merged and the total is capped, so a page costs a few
+only if it also mentions a New Mexico town or county (or, for papers printed in New Mexico, a
+local street cue: the item is about the paper's own town). Overlapping windows are merged and the total is capped, so a page costs a few
 thousand tokens at most.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from .lang import keyword_spans
-from .places_nm import mentions_pilot_area
+from .places_nm import mentions_nm_place
 
 WINDOW = 700          # characters on each side of a keyword
 MAX_CHARS = 12000     # per page, after merging
@@ -46,7 +46,7 @@ def candidate_windows(text: str, local_paper: bool = False) -> list[str]:
     for a, b in keyword_spans(text):
         lo, hi = max(0, a - WINDOW), min(n, b + WINDOW)
         chunk = text[lo:hi]
-        if mentions_pilot_area(chunk) or (local_paper and _LOCAL_CUE.search(chunk)):
+        if mentions_nm_place(chunk) or (local_paper and _LOCAL_CUE.search(chunk)):
             keep.append((lo, hi))
     windows = []
     total = 0

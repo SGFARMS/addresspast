@@ -12,7 +12,8 @@ def test_window_needs_keyword_and_town():
     text = FILLER + "A man was shot and killed last night at a saloon on Railroad avenue in Albuquerque." + FILLER
     w = candidate_windows(text)
     assert len(w) == 1 and "Albuquerque" in w[0]
-    assert candidate_windows(FILLER + "A miner was killed in Silver City." + FILLER) == []
+    assert candidate_windows(FILLER + "A miner was killed in Silver City." + FILLER)  # statewide now
+    assert candidate_windows(FILLER + "A miner was killed in Denver yesterday." + FILLER) == []
     assert candidate_windows(FILLER + "Albuquerque welcomed visitors." + FILLER) == []
 
 
@@ -101,8 +102,15 @@ def test_geocode_rules(monkeypatch):
     assert wrong["geocode_precision"] == "city" and wrong["geocode_status"] == "fallback"
     town = g.geocode_row({"address_raw": "", "city": "Belen", "location_precision": "city_only", "incident_year": 1900})
     assert town["geocode_status"] == "ok" and town["county"] == "Valencia"
-    far = g.geocode_row({"address_raw": "", "city": "Silver City", "location_precision": "city_only"})
-    assert far["geocode_status"] == "failed"
+    far = g.geocode_row({"address_raw": "", "city": "El Paso", "location_precision": "city_only"})
+    assert far["geocode_status"] == "failed"  # Photon's answer isn't a New Mexico place named El Paso
+
+    # Anywhere else in New Mexico: the town comes from Photon (OpenStreetMap).
+    monkeypatch.setattr(g, "photon", lambda q: {"geometry": {"coordinates": [-108.2742, 32.7701]},
+                                                 "properties": {"name": "Silver City", "osm_key": "place", "osm_value": "town",
+                                                                "county": "Grant County"}})
+    sc = g.geocode_row({"address_raw": "", "city": "Silver City", "location_precision": "city_only", "incident_year": 1912})
+    assert sc["geocode_status"] == "ok" and sc["county"] == "Grant" and sc["geocode_precision"] == "city"
 
 
 def test_spot_check_holds_every_record(monkeypatch):

@@ -39,7 +39,7 @@ const supabaseStore: AdminStore = {
       confidence: r.confidence == null ? null : Number(r.confidence), reviewReason: r.review_reason,
       outsideArea: r.geocode_status === "failed", createdAt: r.created_at,
     }))
-      // Records in our counties first; out-of-area ones (Gallup, Santa Fe, El Paso...) at the end.
+      // Records we could place first; ones with no New Mexico town (El Paso, Denver...) at the end.
       .sort((a, b) => Number(a.outsideArea) - Number(b.outsideArea));
     const suggestions = must<any[]>(sug, "suggestions").map<ReviewSuggestion>((r) => ({
       id: r.id, incidentId: r.incident_id, addressRaw: r.ap_incidents?.address_raw ?? "", city: r.ap_incidents?.city ?? null,

@@ -16,7 +16,7 @@ export interface ReviewIncident {
   summary: string | null;
   confidence: number | null;
   reviewReason: string | null;
-  /** Geocoding found no town in our counties: approving it won't put it on the map. */
+  /** Geocoding found no New Mexico town for it: approving it won't put it on the map. */
   outsideArea: boolean;
   createdAt: string;
 }

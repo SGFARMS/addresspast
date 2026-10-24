@@ -40,18 +40,18 @@ on:
         description: "USD cap for this run"
         default: "20"
       scope:
-        description: "loc: local (papers printed in ABQ/Belen/Los Lunas/Bernalillo) or state (every NM paper)"
+        description: "loc: state (every NM paper) or local (papers printed in ABQ/Belen/Los Lunas/Bernalillo)"
         required: true
-        default: local
+        default: state
         type: choice
-        options: [local, state]
+        options: [state, local]
       max_pages:
         description: "stop after this many newspaper pages (0 = no limit)"
         default: "0"
       hold_for_review:
         description: "live: hold every new record in /admin until approved (spot-check)"
         required: true
-        default: "yes"
+        default: "no"
         type: choice
         options: ["yes", "no"]
 
@@ -84,7 +84,7 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             if [ ! -f pipeline/BACKFILL_ON ]; then echo "Backlog autopilot is off (no pipeline/BACKFILL_ON)."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
             echo "mode=live" >> "$GITHUB_OUTPUT"
-            echo "args=--loc --resume --start-year 1860 --end-year 1963 --scope local --max-cost 20" >> "$GITHUB_OUTPUT"
+            echo "args=--loc --resume --start-year 1860 --end-year 1963 --scope state --max-cost 20" >> "$GITHUB_OUTPUT"
           else
             A="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }}"
             if [ "${{ inputs.source }}" = "loc" ]; then

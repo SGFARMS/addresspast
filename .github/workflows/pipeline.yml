@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "harvest | nightly | batches | parcels"
+        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly)"
         required: true
         default: nightly
 
@@ -53,11 +53,18 @@ jobs:
           .github/scripts/run.sh geocode python -m pipeline.geocode
           .github/scripts/run.sh historic-geo python -m pipeline.historic_geo --limit 100
 
-      - name: Nightly dedupe
-        if: steps.db.outputs.ok == 'true' && (github.event.schedule == '37 8 * * *' || inputs.job == 'nightly')
+      - name: Release spot-check holds and re-place records
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'publish'
         run: |
           set -e
-          .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh release python -m pipeline.release
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode-retry python -m pipeline.geocode --retry-failed --limit 5000
+
+      - name: Nightly dedupe
+        if: steps.db.outputs.ok == 'true' && (github.event.schedule == '37 8 * * *' || inputs.job == 'nightly' || inputs.job == 'publish')
+        run: |
+          set -e
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500
           .github/scripts/run.sh translate python -m pipeline.translate --limit 500
           .github/scripts/run.sh parcel-match python -m pipeline.parcels match
 

@@ -28,6 +28,10 @@ Actions → **harvest** → Run workflow. Start with a dry run:
 
 The run summary says where it stopped. In live mode, `start_page: resume` continues from there.
 
+**Statewide:** the pre-filter accepts a death near any New Mexico town or county (`places_nm.NM_PLACE_NAMES` / `NM_COUNTIES`), and every NM paper counts as local to its own town. The geocoder places the three pilot counties from the built-in list (with OCR variants) and any other NM town through Photon/OpenStreetMap. Records with no NM town (El Paso, Denver...) stay unplaced and never reach the map.
+
+**Publishing held records:** `pipeline` → Run workflow → job `publish` releases spot-check holds, re-places records that found no town before, then runs the nightly dedupe so they appear on the map.
+
 **Daily live jobs:** the scheduled `pipeline` runs (daily news harvest, nightly dedupe/translate/parcel match, batch collection) write to the live site, so they only run while an empty file `pipeline/LIVE_ON` exists. Add it after the first spot-check is approved; running a job by hand works either way.
 
 **Backlog autopilot:** add an empty file `pipeline/BACKFILL_ON` and a live run starts every 6 hours, picks up where the last one stopped, and stops for good once 1860–1963 is done (or the $20 cap is spent). Delete the file to pause it.

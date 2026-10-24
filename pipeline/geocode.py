@@ -102,12 +102,46 @@ def name_matches(wanted: str, got: str) -> bool:
     return bool(a) and len(a & b) / len(a) >= 0.5
 
 
+_PLACE_KINDS = {"city", "town", "village", "hamlet", "locality", "suburb", "neighbourhood", "isolated_dwelling"}
+
+
+def nm_town(name: str | None) -> Town | None:
+    """Any New Mexico town, looked up on Photon (OpenStreetMap), for places outside the pilot list."""
+    if not name or not name.strip():
+        return None
+    key = "t:" + name.strip().lower()
+    if key in _cache:
+        return _cache[key]  # type: ignore[return-value]
+    f = photon(f"{name.strip()}, New Mexico")
+    town = None
+    if f:
+        lng, lat = f["geometry"]["coordinates"][:2]
+        props = f.get("properties") or {}
+        label = props.get("name") or ""
+        kind = props.get("osm_value") or props.get("type") or ""
+        if kind in _PLACE_KINDS and in_nm(lat, lng) and name_matches(name, label):
+            county = (props.get("county") or "").replace(" County", "").strip()  # keep OSM's casing (McKinley)
+            town = Town(label, county, float(lat), float(lng), ())
+    _cache[key] = town
+    return town
+
+
+def _county_name(c: str) -> str | None:
+    """Pilot towns carry lowercase slugs ("valencia"); statewide lookups keep OSM's casing ("McKinley")."""
+    if not c:
+        return None
+    return c if any(ch.isupper() for ch in c) else c.title()
+
+
 def resolve_town(row: dict) -> Town | None:
+    """Pilot towns from the built-in list first (with OCR variants); anywhere else in NM via Photon."""
     t = town_by_name(row.get("city"))
     if t:
         return t
     found = find_towns(f"{row.get('address_raw') or ''} {row.get('city') or ''}")
-    return found[0] if found else None
+    if found:
+        return found[0]
+    return nm_town(row.get("city"))
 
 
 def geocode_row(row: dict) -> dict:
@@ -117,7 +151,7 @@ def geocode_row(row: dict) -> dict:
     if not town:
         return {"geocode_status": "failed", "geocode_source": None, "geocoded_at": now}
 
-    base = {"city": row.get("city") or town.name, "county": row.get("county") or town.county.title(), "geocoded_at": now}
+    base = {"city": row.get("city") or town.name, "county": row.get("county") or _county_name(town.county), "geocoded_at": now}
     at_town = {**base, "lat": town.lat, "lng": town.lng, "geocode_precision": "city", "geocode_source": "town_centroid"}
     precision = row.get("location_precision")
     year = row.get("incident_year")
@@ -154,14 +188,15 @@ def geocode_row(row: dict) -> dict:
     return {**at_town, "geocode_status": "ok"}  # city_only: the town is exactly what we know
 
 
-def main(limit: int):
+def main(limit: int, retry_failed: bool = False):
     from .common.db import db
     from .common.runlog import PipelineRun
 
+    q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year")
+    # --retry-failed: records that found no town before (e.g. outside the old three-county list)
+    q = q.or_("geocode_status.is.null,geocode_status.eq.failed") if retry_failed else q.is_("geocode_status", "null")
     rows = (
-        db().table("ap_incidents")
-        .select("id,address_raw,city,county,location_precision,incident_year")
-        .is_("geocode_status", "null")
+        q
         .eq("hidden", False)
         .order("id")
         .limit(limit)
@@ -184,4 +219,6 @@ def main(limit: int):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=2000)
-    main(ap.parse_args().limit)
+    ap.add_argument("--retry-failed", action="store_true", help="also retry records that found no town before")
+    a = ap.parse_args()
+    main(a.limit, a.retry_failed)
