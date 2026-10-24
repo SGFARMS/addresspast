@@ -53,6 +53,8 @@ CSV_FIELDS = [
 class Stats:
     source: str
     dry_run: bool
+    scope: str | None = None          # loc: which papers ("local" / "state"), so "done" means done for this scope
+    year_range: list | None = None    # loc: [start_year, end_year] of the range this run worked on
     loc_requests: int = 0
     loc_results_skipped: int = 0
     pages_seen: int = 0
@@ -347,7 +349,10 @@ class Harvester:
 
 
 def last_resume_point():
-    """The resume point the most recent live Chronicling America run saved (None = start fresh, 'done' = finished)."""
+    """What the most recent live Chronicling America run left behind.
+
+    None = start fresh; a resume dict ({year, offset, city, start_year, end_year, scope}); or
+    {"done": True, "scope", "start_year", "end_year"} when that run finished its whole range."""
     from .common.db import db
 
     rows = (
@@ -359,7 +364,10 @@ def last_resume_point():
     st = (rows[0].get("meta") or {}).get("stats") or {}
     if st.get("resume"):
         return st["resume"]
-    return "done" if (st.get("resume_from") or "").startswith("done") else None
+    if (st.get("resume_from") or "").startswith("done"):
+        rng = st.get("year_range") or [None, None]
+        return {"done": True, "scope": st.get("scope") or "local", "start_year": rng[0], "end_year": rng[1]}
+    return None
 
 
 def clean_title(t: str | None) -> str | None:
@@ -442,9 +450,15 @@ def main(argv=None):
         args.start_offset = (args.start_page - 1) * args.per_page
     if args.resume and not args.dry_run and args.loc:
         last = last_resume_point()
-        if last == "done":
-            print("Chronicling America backlog is already complete; nothing to resume.")
-            return
+        if last and last.get("done"):
+            same = (last.get("scope") == args.scope and last.get("start_year") is not None
+                    and last["start_year"] <= args.start_year and (last.get("end_year") or 0) >= args.end_year)
+            if same:
+                print(f"Chronicling America backlog ({args.scope}, {args.start_year}-{args.end_year}) is already complete; nothing to resume.")
+                return
+            print(f"Last run finished a different range ({last.get('scope')}, {last.get('start_year')}-{last.get('end_year')}); "
+                  f"starting {args.scope} {args.start_year}-{args.end_year} (pages already read are skipped)", flush=True)
+            last = None
         if last and last.get("scope", "local") != args.scope:
             print(f"Last run was scope '{last.get('scope', 'local')}'; starting scope '{args.scope}' from {args.start_year} "
                   "(pages already read are skipped)", flush=True)
@@ -459,6 +473,9 @@ def main(argv=None):
 
     source = "loc" if args.loc else "rss"
     stats = Stats(source=source, dry_run=args.dry_run)
+    if args.loc:
+        stats.scope = args.scope
+        stats.year_range = [args.range_start, args.end_year]
     out = Output(args.out)
     t0 = time.monotonic()
 
