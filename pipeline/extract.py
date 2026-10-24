@@ -4,6 +4,7 @@ Shared by harvest.py (live) and batches.py (Message Batches backlog).
 """
 from __future__ import annotations
 
+import os
 import threading
 
 from .common.config import MODEL_FAST, MODEL_SMART
@@ -101,6 +102,9 @@ def review_reason(it: dict) -> str | None:
     kind = it.get("place_kind")
     if kind in REVIEW_KINDS:
         return REVIEW_KINDS[kind]
+    if os.environ.get("AP_HOLD_FOR_REVIEW") == "1":
+        # Spot-check runs: every record waits in /admin until a person approves it.
+        return "spot-check"
     return None
 
 

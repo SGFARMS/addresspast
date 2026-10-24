@@ -103,3 +103,17 @@ def test_geocode_rules(monkeypatch):
     assert town["geocode_status"] == "ok" and town["county"] == "Valencia"
     far = g.geocode_row({"address_raw": "", "city": "Silver City", "location_precision": "city_only"})
     assert far["geocode_status"] == "failed"
+
+
+def test_spot_check_holds_every_record(monkeypatch):
+    monkeypatch.setenv("AP_HOLD_FOR_REVIEW", "1")
+    page = {"url": "https://example.org/b", "language": "en"}
+    items = [
+        {"address_raw": "412 N. Fifth St.", "city": "Albuquerque", "location_precision": "street_address",
+         "place_kind": "house", "cause_category": "accident", "summary": "A fall.", "confidence": 0.9},
+        {"address_raw": "Sturges Hotel", "city": "Albuquerque", "location_precision": "landmark",
+         "place_kind": "boarding_house_or_hotel", "cause_category": "homicide", "summary": "A shooting.", "confidence": 0.8},
+    ]
+    house, hotel = to_rows(page, items)
+    assert house["needs_review"] and house["review_reason"] == "spot-check"
+    assert hotel["review_reason"] == "boarding house or hotel"  # the more specific reason wins

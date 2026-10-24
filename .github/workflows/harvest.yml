@@ -48,6 +48,12 @@ on:
       max_pages:
         description: "stop after this many newspaper pages (0 = no limit)"
         default: "0"
+      hold_for_review:
+        description: "live: hold every new record in /admin until approved (spot-check)"
+        required: true
+        default: "yes"
+        type: choice
+        options: ["yes", "no"]
 
 concurrency:
   group: harvest
@@ -62,6 +68,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       AP_HARVEST_CAP_USD: "20"
+      AP_HOLD_FOR_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.hold_for_review == 'yes' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
