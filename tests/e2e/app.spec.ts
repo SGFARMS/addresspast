@@ -4,20 +4,16 @@ import { expect, test } from "@playwright/test";
 const DOWNTOWN = { label: "Sample St, Albuquerque", lat: 35.0849, lng: -106.651, city: "Albuquerque", county: "Bernalillo", kind: "address" };
 const EMPTY_SPOT = { label: "Quiet Rd, Belen", lat: 34.7, lng: -106.9, city: "Belen", county: "Valencia", kind: "address" };
 
-test.describe("pre-launch", () => {
-  test("waitlist shows and is noindex", async ({ page }) => {
+test.describe("launched", () => {
+  test("home page is open to everyone and indexable", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Know what happened here");
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
-    const robots = await page.request.get("/robots.txt");
-    expect(await robots.text()).toContain("Disallow: /");
-  });
-
-  test("waitlist signup", async ({ page }) => {
-    await page.goto("/");
-    await page.getByLabel("Email address").fill(`e2e-${Date.now()}@example.com`);
-    await page.getByRole("button", { name: "Join the waitlist" }).click();
-    await expect(page.getByRole("status")).toContainText("on the list");
+    await expect(page.getByRole("heading", { name: "What happened here?" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Join the waitlist" })).toHaveCount(0);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /index/);
+    await expect(page.locator('meta[name="robots"]')).not.toHaveAttribute("content", /noindex/);
+    const robots = await (await page.request.get("/robots.txt")).text();
+    expect(robots).toContain("Disallow: /admin");
+    expect(robots).toContain("Sitemap:");
   });
 });
 

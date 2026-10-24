@@ -17,7 +17,7 @@ export const siteConfig = {
 
   // ── Launch state ──────────────────────────────────────────────────────
   /** false = waitlist home page, noindex everywhere, robots.txt disallow. */
-  launched: false,
+  launched: true,
   /** Cookie set by /preview?key=PREVIEW_SECRET to bypass the waitlist. */
   previewCookie: "ap_preview",
 
