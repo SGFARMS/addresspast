@@ -83,7 +83,10 @@ def paper_info(lccn: str) -> dict:
         pop = item.get("place_of_publication") or ""
         if pop:
             cities.append(str(pop).split(",")[0].strip().lower())
-        langs = [str(x).lower() for x in (item.get("languages") or item.get("language") or [])]
+        langs = []
+        for x in item.get("languages") or item.get("language") or []:
+            # plain strings, or {"english": "<search url>"} on loc.gov
+            langs.extend(str(k).lower() for k in (x.keys() if isinstance(x, dict) else [x]))
         if title or cities:
             info = {"title": title, "cities": sorted(set(c for c in cities if c)), "languages": langs}
             break
