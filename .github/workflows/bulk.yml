@@ -1,0 +1,26 @@
+# Chronicling America bulk OCR (whole batches of New Mexico newspaper text).
+# discover: list the Library of Congress dataset portal's shape and the New Mexico batches.
+name: bulk
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "discover"
+        required: true
+        default: discover
+
+jobs:
+  bulk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+      - run: pip install -r pipeline/requirements.txt
+      - name: Run
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh bulk python -m pipeline.sources.bulk_ocr ${{ inputs.command }}
