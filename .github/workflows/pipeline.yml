@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly)"
+        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly) | stats (counts only)"
         required: true
         default: nightly
 
@@ -71,6 +71,10 @@ jobs:
       - name: Collect batches
         if: steps.db.outputs.ok == 'true' && (github.event.schedule == '17 */3 * * *' || inputs.job == 'batches')
         run: .github/scripts/run.sh batches python -m pipeline.batches poll
+
+      - name: Record counts
+        if: steps.db.outputs.ok == 'true' && (inputs.job == 'stats' || inputs.job == 'publish')
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
 
       - name: Load Bernalillo parcels (by hand)
         if: steps.db.outputs.ok == 'true' && inputs.job == 'parcels'

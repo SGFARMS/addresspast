@@ -111,8 +111,16 @@ jobs:
         run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest ${{ steps.cfg.outputs.args }} --max-minutes 320 --out harvest-out
 
       - name: Geocode new records
-        if: steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
+        if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
         run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --limit 5000
+
+      - name: Publish new records
+        # Put this run's finds on the map now instead of waiting for the nightly job.
+        if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
+        run: |
+          set -e
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 2000
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
 
       - uses: actions/upload-artifact@v5
         if: always() && steps.cfg.outputs.skip != 'true'
