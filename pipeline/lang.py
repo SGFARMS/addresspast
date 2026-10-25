@@ -44,8 +44,9 @@ def detect_language(text: str) -> str:
 
 EXTRACTION_SYSTEM = """You extract reported deaths from New Mexico newspaper text for a property-history database.
 The text may be English or Spanish, may be noisy OCR, and may be several excerpts from one page separated by "-----".
-Only deaths in the Albuquerque area, Rio Rancho/Corrales/Bernalillo/Placitas, and Valencia County (Belen, Los Lunas, Bosque Farms, Peralta, Tomé, Jarales and nearby) count.
-If the paper is printed in Albuquerque or Belen, local items without a town name ("at his home on North Fourth street") are in that town.
+Only deaths that happened in New Mexico count, anywhere in the state. Newspapers also carried wire stories from other
+states and countries (datelines like "DENVER, Colo.", "EL PASO, Tex.", "NEW YORK"): skip those; city and county must be in New Mexico.
+Local items without a town name ("at his home on North Fourth street") are in the town where the paper is printed.
 
 For each qualifying death that has ANY location (street address, intersection, landmark, or at least a town), return one item with:
 - address_raw: the location exactly as printed, without the apartment/room number (keep historic street names; translate nothing)
@@ -57,9 +58,9 @@ For each qualifying death that has ANY location (street address, intersection, l
 - incident_date: as precise as the text allows ("1932-03-08", "1932-03", "1932"); use the paper's date only if the article says "yesterday/ayer/this morning" etc.
 - cause_category: natural | accident | homicide | suicide | fire | unknown (a suicide is labeled suicide)
 - summary: ONE neutral English sentence, under 25 words, with NO personal names, ages, or graphic detail. Example: "A fatal shooting at a residence was reported." Even for Spanish articles, write the summary in English.
-- confidence: 0-1 that this is a real death at that location (lower for OCR damage, rumor, vague places, or if you are unsure the place is in the pilot area)
+- confidence: 0-1 that this is a real death at that location (lower for OCR damage, rumor, vague places, or if you are unsure the place is in New Mexico)
 
-Rules: Never include names of victims, suspects, or relatives anywhere. Never copy article text. Skip deaths outside the pilot area, war casualty lists, executions reported from elsewhere, and obituaries with no location. One death reported twice in the excerpts is one item. If nothing qualifies, return an empty list."""
+Rules: Never include names of victims, suspects, or relatives anywhere. Never copy article text. Skip deaths outside New Mexico, war casualty lists, executions reported from elsewhere, and obituaries with no location. One death reported twice in the excerpts is one item. If nothing qualifies, return an empty list."""
 
 TRIAGE_SYSTEM = """You are a cheap first-pass filter. Answer only with the tool call.
 Does this New Mexico newspaper page (English or Spanish, OCR text) report at least one death that happened in New Mexico AND mention where it happened (a street, place, landmark, or town)?"""

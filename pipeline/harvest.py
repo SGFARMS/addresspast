@@ -54,6 +54,7 @@ class Stats:
     source: str
     dry_run: bool
     scope: str | None = None          # loc: which papers ("local" / "state"), so "done" means done for this scope
+    bulk_done: list = field(default_factory=list)   # bulk: batches read to the end in this run
     year_range: list | None = None    # loc: [start_year, end_year] of the range this run worked on
     loc_requests: int = 0
     loc_results_skipped: int = 0
@@ -304,6 +305,58 @@ class Harvester:
         self.mark_scanned(plain + done)
 
     # ── RSS ─────────────────────────────────────────────────────────────
+    # ── Chronicling America, bulk OCR ───────────────────────────────────
+    def harvest_bulk(self):
+        """Read whole New Mexico batches from the bulk OCR archive (no search API, no rate limit)."""
+        from .sources.bulk_ocr import nm_batches, stream_pages
+
+        done = set() if self.args.dry_run else bulk_batches_done()
+        todo = [b for b in nm_batches() if b["batch"] not in done]
+        if self.args.only_batch:
+            todo = [b for b in todo if b["batch"] == self.args.only_batch]
+        print(f"New Mexico batches to read: {len(todo)} ({len(done)} already done)", flush=True)
+        t0 = time.monotonic()
+        for b in todo:
+            print(f"{b['batch']}: {b['page_count'] or '?'} pages, {(b['size'] or 0) / 1e6:.0f} MB", flush=True)
+            chunk: list = []
+            finished = True
+            try:
+                for page in stream_pages(b, self.args.start_year, self.args.end_year):
+                    chunk.append(page)
+                    if len(chunk) >= 200:
+                        self.handle_loc_pages(chunk, chunk[0].date[:4])
+                        chunk = []
+                        if self.stats.pages_seen % 5000 < 200:
+                            mins = (time.monotonic() - t0) / 60
+                            print(f"  {b['batch']}: seen {self.stats.pages_seen}, candidates {self.stats.candidates}, "
+                                  f"records {self.stats.records}, {mins:.0f} min", flush=True)
+                    if self._should_stop(t0):
+                        finished = False
+                        break
+                if chunk:
+                    self.handle_loc_pages(chunk, chunk[0].date[:4])
+            except requests.RequestException as e:  # download broke off: pages read so far are kept
+                finished = False
+                self.stats.errors += 1
+                self.stats.failed_slices.append(f"{b['batch']}: {str(e)[:120]}")
+                print(f"  download of {b['batch']} failed: {e}", file=sys.stderr, flush=True)
+            if finished:
+                self.stats.bulk_done.append(b["batch"])
+            if self._should_stop(t0):
+                return
+        self.stats.resume_from = "done: every New Mexico batch is read" if not self.stop else self.stats.resume_from
+
+    def _should_stop(self, t0: float) -> bool:
+        if self.stop:
+            return True
+        if self.args.max_pages and self.stats.pages_seen >= self.args.max_pages:
+            self.stats.stopped_reason = self.stats.stopped_reason or "max pages reached"
+            return True
+        if self.args.max_minutes and (time.monotonic() - t0) / 60 >= self.args.max_minutes:
+            self.stats.stopped_reason = f"time limit ({self.args.max_minutes:.0f} min)"
+            return True
+        return False
+
     def harvest_rss(self):
         from .sources.rss import FEEDS, fetch_article_text, fetch_feed, new_session
 
@@ -346,6 +399,20 @@ class Harvester:
             self.mark_scanned(plain + done)
             if self.stop:
                 return
+
+
+def bulk_batches_done() -> set[str]:
+    """Batches earlier bulk runs read to the end."""
+    from .common.db import db
+
+    rows = (
+        db().table("ap_pipeline_runs").select("meta").eq("job", "harvest_bulk")
+        .in_("status", ["ok", "partial", "error"]).limit(1000).execute().data
+    ) or []
+    out: set[str] = set()
+    for r in rows:
+        out.update(((r.get("meta") or {}).get("stats") or {}).get("bulk_done") or [])
+    return out
 
 
 def last_resume_point():
@@ -429,6 +496,8 @@ def main(argv=None):
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--loc", action="store_true", help="Chronicling America (Library of Congress)")
     src.add_argument("--rss", action="store_true", help="local news RSS feeds")
+    src.add_argument("--bulk", action="store_true", help="Chronicling America bulk OCR (whole New Mexico batches)")
+    ap.add_argument("--only-batch", default=None, help="bulk: read just this batch (e.g. nmu_austen_ver01)")
     ap.add_argument("--start-year", type=int, default=1860)
     ap.add_argument("--end-year", type=int, default=1963)
     ap.add_argument("--start-page", type=int, default=1, help="resume inside --start-year (pages of --per-page)")
@@ -471,7 +540,7 @@ def main(argv=None):
     if not hasattr(args, "range_start"):
         args.range_start = args.start_year
 
-    source = "loc" if args.loc else "rss"
+    source = "loc" if args.loc else "bulk" if args.bulk else "rss"
     stats = Stats(source=source, dry_run=args.dry_run)
     if args.loc:
         stats.scope = args.scope
@@ -498,7 +567,7 @@ def main(argv=None):
         crashed = None
         try:
             if not stats.stopped_reason:
-                h.harvest_loc() if args.loc else h.harvest_rss()
+                h.harvest_loc() if args.loc else h.harvest_bulk() if args.bulk else h.harvest_rss()
         except Exception as e:  # keep what we have: write the files and the summary, then fail the job
             import traceback
 

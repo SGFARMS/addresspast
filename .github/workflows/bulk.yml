@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "discover"
+        description: "discover | batches"
         required: true
         default: discover
 

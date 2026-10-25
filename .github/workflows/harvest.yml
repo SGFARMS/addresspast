@@ -3,8 +3,8 @@
 #          extract_limit 150 = also extract 150 candidates into records.csv for a spot-check.
 # live:    writes to the BaaS tenant. Spend is capped across all runs by AP_HARVEST_CAP_USD ($20).
 # Results: the run summary, plus the "harvest-out" artifact (records.csv, stats.json, ...).
-# Backlog autopilot: while pipeline/BACKFILL_ON exists, a live Chronicling America run starts every
-# 6 hours and continues where the last one stopped (--resume) until the whole range is done.
+# Backlog autopilot: while pipeline/BACKFILL_ON exists, a live bulk-OCR run starts every 6 hours and reads
+# the New Mexico batches it hasn't finished yet (whole batches of newspaper text, no search API).
 name: harvest
 
 on:
@@ -13,11 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: "loc (Chronicling America) or rss"
+        description: "bulk (Chronicling America bulk OCR, fastest), loc (search API) or rss"
         required: true
-        default: loc
+        default: bulk
         type: choice
-        options: [loc, rss]
+        options: [bulk, loc, rss]
       mode:
         description: "dry-run (no database) or live"
         required: true
@@ -84,9 +84,12 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             if [ ! -f pipeline/BACKFILL_ON ]; then echo "Backlog autopilot is off (no pipeline/BACKFILL_ON)."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
             echo "mode=live" >> "$GITHUB_OUTPUT"
-            echo "args=--loc --resume --start-year 1860 --end-year 1963 --scope state --max-cost 20" >> "$GITHUB_OUTPUT"
+            echo "args=--bulk --start-year 1860 --end-year 1963 --max-cost 20" >> "$GITHUB_OUTPUT"
           else
             A="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }}"
+            if [ "${{ inputs.source }}" = "bulk" ]; then
+              A="$A --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --max-pages ${{ inputs.max_pages }}"
+            fi
             if [ "${{ inputs.source }}" = "loc" ]; then
               A="$A --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --max-pages ${{ inputs.max_pages }} --scope ${{ inputs.scope }}"
               if [ "${{ inputs.start_page }}" = "resume" ]; then A="$A --resume"; else A="$A --start-page ${{ inputs.start_page }}"; fi
