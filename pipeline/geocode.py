@@ -242,7 +242,11 @@ def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False):
             upd = geocode_row(r, recheck=recheck_towns)
             db().table("ap_incidents").update(upd).eq("id", r["id"]).execute()
             if r.get("event_id"):
-                # The record already sits on the map: move (or remove) its event to match.
+                if upd["geocode_status"] == "failed":
+                    # No New Mexico town after all: detach it, so its event loses this record (and is hidden
+                    # if nothing else backs it). If it's placed later, dedupe gives it a fresh event.
+                    db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute()
+                # Move (or remove) the event to match.
                 db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute()
             k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
             counts[k] = counts.get(k, 0) + 1

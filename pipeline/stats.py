@@ -10,7 +10,9 @@ from .common.db import db
 def count(table: str, col: str = "id", **filters) -> int:
     q = db().table(table).select(col, count="exact")
     for k, v in filters.items():
-        if k.endswith("__isnull"):
+        if k == "placed":
+            q = q.not_.is_("geom", "null") if v else q.is_("geom", "null")
+        elif k.endswith("__isnull"):
             q = q.is_(k[:-8], "null") if v else q.not_.is_(k[:-8], "null")
         else:
             q = q.eq(k, v)
@@ -28,10 +30,12 @@ def main():
         ("  placed, waiting for the nightly publish", count("ap_incidents", hidden=False, needs_review=False, event_id__isnull=True)
          - count("ap_incidents", hidden=False, needs_review=False, event_id__isnull=True, geocode_status="failed")
          - count("ap_incidents", hidden=False, needs_review=False, event_id__isnull=True, geocode_status__isnull=True)),
-        ("Deaths on the public site (events)", count("ap_events", hidden=False)),
-        ("  natural causes (hidden on the map until turned on)", count("ap_events", hidden=False, cause_category="natural")),
-        ("  placed at a street, landmark or intersection", count("ap_events", hidden=False) - count("ap_events", hidden=False, geocode_precision="city")),
-        ("  placed at town level only", count("ap_events", hidden=False, geocode_precision="city")),
+        ("Deaths on the public map (events)", count("ap_events", hidden=False, placed=True)),
+        ("  natural causes (hidden on the map until turned on)", count("ap_events", hidden=False, placed=True, cause_category="natural")),
+        ("  placed at a street, landmark or intersection", count("ap_events", hidden=False, placed=True)
+         - count("ap_events", hidden=False, placed=True, geocode_precision="city")),
+        ("  placed at town level only", count("ap_events", hidden=False, placed=True, geocode_precision="city")),
+        ("Site entries with no map spot (should be 0)", count("ap_events", hidden=False, placed=False)),
         ("Newspaper pages read so far", count("ap_scanned_pages", col="url")),
     ]
     lines = ["## AddressPast record counts", "", "| | |", "|---|---|"] + [f"| {k} | {v:,} |" for k, v in rows]
