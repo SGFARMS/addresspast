@@ -165,3 +165,15 @@ def test_tool_choice_fits_the_model():
     c = Client()
     assert tool_input(create_with_tool(c, "t", model="claude-haiku-9", messages=[])) == {"ok": True}
     assert c.calls == [{"type": "tool", "name": "t"}, {"type": "auto"}]
+
+
+def test_fars_rows():
+    from pipeline.fars import to_incident
+
+    row = {"STATE": "35", "ST_CASE": "350123", "MONTH": "3", "DAY": "8", "LATITUDE": "35.0844", "LONGITUD": "-106.6504",
+           "FATALS": "2", "COUNTY": "1", "COUNTYNAME": "BERNALILLO (1)", "CITYNAME": "ALBUQUERQUE (40)", "TWAY_ID": "I-40", "TWAY_ID2": ""}
+    i = to_incident(row, 2019)
+    assert i["record_type"] == "road_death" and i["city"] == "Albuquerque" and i["county"] == "Bernalillo"
+    assert i["incident_date"] == "2019-03-08" and "2 people died" in i["summary"] and i["address_raw"] == "I-40"
+    assert to_incident({**row, "LATITUDE": "77.7777"}, 2019) is None  # coordinates not reported
+    assert to_incident({**row, "STATE": "4"}, 2019) is None  # Arizona

@@ -95,6 +95,7 @@
   },
   "types": {
     "death": "Muerte reportada",
+    "road_death": "Choque de tránsito fatal",
     "fire": "Incendio de estructura",
     "drug_lab": "Antiguo laboratorio de drogas",
     "flood_zone": "Zona de inundación"

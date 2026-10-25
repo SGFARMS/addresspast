@@ -24,7 +24,7 @@ const SYSTEM = `You convert a user's search question about New Mexico property h
 Only extract what the question states. Never invent places or dates. The current year is ${new Date().getFullYear()}.
 - place: a place, neighborhood, street or address in New Mexico mentioned in the question, as a geocodable string with the city (e.g. "Old Town, Albuquerque"). null if none.
 - radius_m: search radius in meters if stated or implied ("near" ≈ 500, "around" ≈ 1000, a whole town ≈ 4000). null if not stated.
-- record_types: subset of ${JSON.stringify(RECORD_TYPES)}. "deaths"/"muertes" → death; "fires"/"incendios" → fire AND cause fire; "meth lab"/"drug lab" → drug_lab; "flood" → flood_zone. null if not stated.
+- record_types: subset of ${JSON.stringify(RECORD_TYPES)}. "deaths"/"muertes" → death; "fires"/"incendios" → fire AND cause fire; "meth lab"/"drug lab" → drug_lab; "flood" → flood_zone; "car crash"/"traffic"/"highway" deaths → road_death. null if not stated.
 - causes: subset of ${JSON.stringify(CAUSES)}. null if not stated.
 - year_from / year_to: integer years. "before 1950" → year_to 1949. "in the last 10 years" → year_from current year minus 10. "1930s" → 1930..1939.
 - include_natural: true only if the question asks about natural deaths or "all deaths".
@@ -77,6 +77,7 @@ export function parseWithRules(qRaw: string): Parsed {
   if (/\b(fires?|incendios?)\b/.test(q)) { types.add("fire"); types.add("death"); causes.add("fire"); }
   if (/\b(meth|drug)\s*labs?\b|laboratorio/.test(q)) types.add("drug_lab");
   if (/\bflood|inundaci/.test(q)) types.add("flood_zone");
+  if (/\b(car|traffic|road|highway|crash(es)?|wrecks?|choques?|tr[aá]nsito|carretera)\b/.test(q)) types.add("road_death");
   if (/\b(deaths?|died|muertes?|muri[oó])\b/.test(q)) types.add("death");
   if (/\b(murders?|homicides?|homicidios?|shootings?|asesinat)/.test(q)) causes.add("homicide");
   if (/\b(accidents?|accidentes?|crash|drown)/.test(q)) causes.add("accident");

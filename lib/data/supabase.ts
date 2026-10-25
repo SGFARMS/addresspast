@@ -59,8 +59,12 @@ export const supabaseRepo: Repo = {
     const r: FreeCheck = {
       parcelMatched: Boolean(d.parcel_matched),
       parcelYearBuilt: d.parcel_year_built ?? null,
-      atAddress: (d.at_address ?? []).map(toItem),
-      nearby: (d.nearby ?? []).map(toItem),
+      // A crash on the road in front of a lot is "nearby", never "at this address".
+      atAddress: (d.at_address ?? []).map(toItem).filter((i: CheckItem) => i.recordType !== "road_death"),
+      nearby: [
+        ...(d.at_address ?? []).map(toItem).filter((i: CheckItem) => i.recordType === "road_death"),
+        ...(d.nearby ?? []).map(toItem),
+      ],
       cityOnlyCount: Number(d.city_only_count ?? 0),
       coverage: toCoverage(d.coverage),
       asOf: d.as_of ?? null,

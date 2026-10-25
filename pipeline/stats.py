@@ -30,11 +30,14 @@ def main():
         ("  placed, waiting for the nightly publish", count("ap_incidents", hidden=False, needs_review=False, event_id__isnull=True)
          - count("ap_incidents", hidden=False, needs_review=False, event_id__isnull=True, geocode_status="failed")
          - count("ap_incidents", hidden=False, needs_review=False, event_id__isnull=True, geocode_status__isnull=True)),
-        ("Deaths on the public map (events)", count("ap_events", hidden=False, placed=True)),
-        ("  natural causes (hidden on the map until turned on)", count("ap_events", hidden=False, placed=True, cause_category="natural")),
-        ("  placed at a street, landmark or intersection", count("ap_events", hidden=False, placed=True)
-         - count("ap_events", hidden=False, placed=True, geocode_precision="city")),
-        ("  placed at town level only", count("ap_events", hidden=False, placed=True, geocode_precision="city")),
+        ("Deaths on the public map (events)", count("ap_events", hidden=False, placed=True, record_type="death")),
+        ("  natural causes (hidden on the map until turned on)",
+         count("ap_events", hidden=False, placed=True, record_type="death", cause_category="natural")),
+        ("  placed at a street, landmark or intersection", count("ap_events", hidden=False, placed=True, record_type="death")
+         - count("ap_events", hidden=False, placed=True, record_type="death", geocode_precision="city")),
+        ("  placed at town level only", count("ap_events", hidden=False, placed=True, record_type="death", geocode_precision="city")),
+        ("Fatal traffic crashes on the map (FARS layer)", count("ap_events", hidden=False, placed=True, record_type="road_death")),
+        ("Fatal traffic crashes loaded", count("ap_incidents", record_type="road_death")),
         ("Site entries with no map spot (should be 0)", count("ap_events", hidden=False, placed=False)),
         ("Newspaper pages read so far", count("ap_scanned_pages", col="url")),
     ]

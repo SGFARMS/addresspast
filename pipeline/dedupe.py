@@ -83,6 +83,8 @@ def main(limit: int):
     with PipelineRun("dedupe") as run:
         fresh = ensure_events(run)[:limit]
         for r in fresh:
+            if r.get("record_type") == "road_death":
+                continue  # official crash records (FARS) are one row per crash: nothing to merge, no AI calls
             cands = db().rpc("ap_dedupe_candidates", {"p_incident_id": r["id"]}).execute().data or []
             for c in cands:
                 other = db().table("ap_incidents").select(FIELDS).eq("id", c["candidate_id"]).single().execute().data
