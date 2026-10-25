@@ -75,7 +75,8 @@ def test_rows_scrub_review_and_units():
 
 
 def test_sonnet_escalation_rules():
-    assert needs_sonnet([{"confidence": 0.5, "location_precision": "city_only"}])
+    assert not needs_sonnet([{"confidence": 0.5, "location_precision": "city_only"}])  # town-level: Haiku's read stands
+    assert not needs_sonnet([{"confidence": 0.1, "location_precision": "street_address"}])  # clearly junk
     assert needs_sonnet([{"confidence": 0.7, "location_precision": "street_address"}])
     assert not needs_sonnet([{"confidence": 0.9, "location_precision": "street_address"}])
     assert not needs_sonnet([{"confidence": 0.7, "location_precision": "city_only"}])
@@ -177,3 +178,12 @@ def test_fars_rows():
     assert i["incident_date"] == "2019-03-08" and "2 people died" in i["summary"] and i["address_raw"] == "I-40"
     assert to_incident({**row, "LATITUDE": "77.7777"}, 2019) is None  # coordinates not reported
     assert to_incident({**row, "STATE": "4"}, 2019) is None  # Arizona
+
+
+def test_weak_keywords_need_company():
+    town = "in Albuquerque yesterday."
+    assert candidate_windows(FILLER + "The dead letter office " + town + FILLER) == []          # lone weak word
+    assert candidate_windows(FILLER + "He was found dead at his home " + town + FILLER)       # strong phrase
+    assert candidate_windows(FILLER + "She died after the shooting " + town + FILLER)          # two weak words together
+    far = FILLER + "A man was killed. " + ("Unrelated news about the fair. " * 20) + "Albuquerque" + FILLER
+    assert candidate_windows(far) == []  # the town is too far from the keyword

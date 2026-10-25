@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import re
 
-from .lang import keyword_spans
+from .lang import keyword_hits
 from .places_nm import mentions_nm_place
 
-WINDOW = 700          # characters on each side of a keyword
+WINDOW = 700          # characters on each side of a keyword (what we send)
+NEAR = 300            # a town or local-street cue must be this close to the keyword (what we require)
+PAIR = 250            # a weak keyword ("died", "dead") needs another keyword this close
 MAX_CHARS = 12000     # per page, after merging
 SEPARATOR = "\n-----\n"
 
@@ -42,12 +44,14 @@ def candidate_windows(text: str, local_paper: bool = False) -> list[str]:
     if not text:
         return []
     n = len(text)
+    hits = keyword_hits(text)
     keep: list[tuple[int, int]] = []
-    for a, b in keyword_spans(text):
-        lo, hi = max(0, a - WINDOW), min(n, b + WINDOW)
-        chunk = text[lo:hi]
-        if mentions_nm_place(chunk) or (local_paper and _LOCAL_CUE.search(chunk)):
-            keep.append((lo, hi))
+    for i, (a, b, strong) in enumerate(hits):
+        if not strong and not any(abs(a2 - a) <= PAIR for j, (a2, _, _) in enumerate(hits) if j != i):
+            continue  # a lone "died"/"dead": usually not a death report we can place
+        near = text[max(0, a - NEAR):min(n, b + NEAR)]
+        if mentions_nm_place(near) or (local_paper and _LOCAL_CUE.search(near)):
+            keep.append((max(0, a - WINDOW), min(n, b + WINDOW)))
     windows = []
     total = 0
     for lo, hi in _merge(keep):

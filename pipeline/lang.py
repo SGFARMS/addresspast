@@ -20,6 +20,11 @@ SPANISH_KEYWORDS = [
 ]
 
 ALL_KEYWORDS = ENGLISH_KEYWORDS + SPANISH_KEYWORDS
+
+# Everyday words that alone are mostly noise ("dead letter", "deadly dull", obituary columns from elsewhere):
+# they only count when another death keyword is close by. Everything else is a strong keyword.
+WEAK_KEYWORDS = {"died", "dead", "deadly", "fatal", "shooting", "killing", "stabbing", "murió", "murio",
+                 "falleció", "fallecio", "difunto", "difunta", "incendio", "quemado", "pereció", "perecio", "juez de paz"}
 _KEYWORD_RE = re.compile(r"\b(?:" + "|".join(re.escape(k) for k in sorted(ALL_KEYWORDS, key=len, reverse=True)) + r")\b", re.I)
 
 _ES_MARKERS = re.compile(r"\b(el|la|los|las|del|que|por|para|una|con|señor|condado|ayer)\b", re.I)
@@ -32,6 +37,11 @@ def has_keyword(text: str) -> bool:
 
 def keyword_spans(text: str) -> list[tuple[int, int]]:
     return [m.span() for m in _KEYWORD_RE.finditer(text or "")]
+
+
+def keyword_hits(text: str) -> list[tuple[int, int, bool]]:
+    """(start, end, strong) for every death keyword."""
+    return [(m.start(), m.end(), m.group(0).lower() not in WEAK_KEYWORDS) for m in _KEYWORD_RE.finditer(text or "")]
 
 
 def detect_language(text: str) -> str:

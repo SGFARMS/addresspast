@@ -76,12 +76,11 @@ def items_from_message(msg) -> list[dict]:
 
 
 def needs_sonnet(items: list[dict]) -> bool:
-    """Unclear or important: borderline confidence, or a specific house we're not sure about."""
+    """Worth a second, pricier look: a specific street address or intersection Haiku isn't sure about.
+    (Town-level records don't pin a house, so Haiku's read stands; that keeps the full archive affordable.)"""
     for it in items:
         c = float(it.get("confidence", 0.5) or 0)
-        if 0.3 <= c < 0.6:
-            return True
-        if it.get("location_precision") in ("street_address", "intersection") and c < 0.8:
+        if it.get("location_precision") in ("street_address", "intersection") and 0.3 <= c < 0.8:
             return True
     return False
 
