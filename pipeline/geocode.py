@@ -174,25 +174,31 @@ def paper_town(source_url: str | None) -> str | None:
     return cities[0].title() if cities else None
 
 
+_COUNTY_PHRASE = re.compile(r"\b[\w ]{0,20}?\b(?:county|co\.)\b|\bcondado\s+de\s+\w+", re.I)
+
+
 def resolve_town(row: dict, recheck: bool = False) -> Town | None:
-    """Pilot towns from the built-in list first (with OCR variants); anywhere else in NM via Photon.
-    A record with no town at all is a local item: it belongs to the town the paper was printed in."""
-    from_paper = False
-    if not (row.get("city") or "").strip():
-        found = find_towns(row.get("address_raw") or "")
-        if found:
-            return found[0]
-        town_from_paper = paper_town(row.get("source_url"))
-        if town_from_paper:
-            row, from_paper = {**row, "city": town_from_paper}, True
-    t = town_by_name(row.get("city"))
-    if t:
-        return t
-    found = find_towns(f"{row.get('address_raw') or ''} {row.get('city') or ''}")
+    """Find the town for a record.
+
+    1. The record's own town: the built-in pilot list (with OCR variants), then anywhere in NM via Photon.
+    2. A pilot town named in the address text ("county" phrases removed, so "Valencia county" isn't the
+       village of Valencia).
+    3. No town at all: a local item, so the town the paper was printed in (trusted as New Mexico).
+    """
+    city = (row.get("city") or "").strip()
+    if city:
+        t = town_by_name(city) or nm_town(city, row.get("county"), recheck)
+        if t:
+            return t
+    address = _COUNTY_PHRASE.sub(" ", row.get("address_raw") or "")
+    found = find_towns(address)
     if found:
         return found[0]
-    # A New Mexico paper's own town is New Mexico by definition, so it skips the plausibility check.
-    return nm_town(row.get("city"), row.get("county"), recheck, trusted=from_paper)
+    if not city:
+        town_from_paper = paper_town(row.get("source_url"))
+        if town_from_paper:
+            return town_by_name(town_from_paper) or nm_town(town_from_paper, row.get("county"), recheck, trusted=True)
+    return None
 
 
 def geocode_row(row: dict, recheck: bool = False) -> dict:

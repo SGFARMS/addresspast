@@ -214,3 +214,13 @@ def test_fars_old_lowercase_columns():
     rows = list(accident_rows(zipfile.ZipFile(buf)))
     i = to_incident(rows[0], 2001)
     assert i and i["lat"] == 35.0418 and i["county"] == "Bernalillo" and i["incident_date"] == "2001-06-02"
+
+
+def test_county_phrase_is_not_a_town(monkeypatch):
+    from pipeline import geocode as g
+
+    monkeypatch.setattr(g, "photon", lambda q, places_only=False: {"geometry": {"coordinates": [-107.8516, 35.1473]},
+        "properties": {"name": "Grants", "osm_value": "town", "county": "Cibola County"}})
+    r = g.geocode_row({"address_raw": "near Grants, Valencia county", "city": "Grants", "county": "Valencia",
+                       "location_precision": "city_only", "incident_year": 1912})
+    assert r["geocode_status"] == "ok" and abs(r["lng"] - -107.8516) < 0.01  # Grants, not the village of Valencia

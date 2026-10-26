@@ -64,12 +64,14 @@ def _make_event(r: dict) -> dict:
 
 def ensure_events(run, max_minutes: float = 40) -> list[dict]:
     """Give every placed, visible, unheld record its own public event. Pages through the backlog (the API
-    returns at most 1,000 rows per request) with 8 requests in flight, until none are left."""
+    returns at most 1,000 rows per request) two at a time, until none are left."""
     from concurrent.futures import ThreadPoolExecutor
 
     t0 = time.monotonic()
     made: list[dict] = []
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    # 2 at a time: each event is three requests including a recompute; more than that once knocked the
+    # shared database over (Oct 26).
+    with ThreadPoolExecutor(max_workers=2) as pool:
         while (time.monotonic() - t0) / 60 < max_minutes:
             # Only geocoded, visible records that aren't waiting for human review become events.
             rows = (
