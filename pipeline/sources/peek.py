@@ -42,5 +42,24 @@ def msha():
                 print(name, "col", c)
 
 
+def news():
+    """robots.txt rules and sitemap shape for each local outlet (for an archive of recent deaths)."""
+    from .rss import FEEDS
+
+    for name, feed, _city in FEEDS:
+        site = "/".join(feed.split("/")[:3])
+        try:
+            rb = requests.get(site + "/robots.txt", headers=UA, timeout=30)
+            lines = [l.strip() for l in rb.text.splitlines() if re.match(r"(?i)(user-agent|disallow|sitemap|crawl-delay)", l.strip())]
+            print(f"== {name} robots {rb.status_code}: {lines[:25]}")
+            maps = [l.split(":", 1)[1].strip() for l in lines if l.lower().startswith("sitemap")]
+            for m in (maps or [site + "/sitemap.xml"])[:2]:
+                sm = requests.get(m, headers=UA, timeout=60)
+                locs = re.findall(r"<loc>([^<]+)</loc>", sm.text)
+                print(f"   sitemap {m} -> {sm.status_code}, {len(locs)} entries, e.g. {locs[:3]} ... {locs[-2:]}")
+        except Exception as e:
+            print(f"== {name}: {type(e).__name__}: {str(e)[:150]}")
+
+
 if __name__ == "__main__":
-    {"fra": fra, "msha": msha}[sys.argv[1]]()
+    {"fra": fra, "msha": msha, "news": news}[sys.argv[1]]()
