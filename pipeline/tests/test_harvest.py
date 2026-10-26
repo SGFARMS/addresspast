@@ -224,3 +224,15 @@ def test_county_phrase_is_not_a_town(monkeypatch):
     r = g.geocode_row({"address_raw": "near Grants, Valencia county", "city": "Grants", "county": "Valencia",
                        "location_precision": "city_only", "incident_year": 1912})
     assert r["geocode_status"] == "ok" and abs(r["lng"] - -107.8516) < 0.01  # Grants, not the village of Valencia
+
+
+def test_county_history_decides_town_fit():
+    from pipeline import geocode as g
+
+    assert g.county_fits("Valencia", "Cibola")        # Cubero, Valencia County, 1910: right for its time
+    assert g.county_fits("Socorro", "Sierra")         # Chloride before Sierra County existed
+    assert not g.county_fits("Grant", "bernalillo")   # a Grant County item pinned on Albuquerque
+    assert g.county_fits(None, "bernalillo") and g.county_fits("Maricopa", "bernalillo")  # nothing to compare
+    r = g.geocode_row({"address_raw": "", "city": "Albuquerque", "county": "Grant", "location_precision": "city_only",
+                       "incident_year": 1910})
+    assert r["geocode_status"] == "failed"

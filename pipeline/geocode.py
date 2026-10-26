@@ -174,6 +174,31 @@ def paper_town(source_url: str | None) -> str | None:
     return cities[0].title() if cities else None
 
 
+# Counties New Mexico carved out of older ones (modern county -> counties its land used to belong to).
+# A record naming the older county for a town in the newer one is right for its time (Cubero, Valencia
+# County, 1910); a record naming an unrelated county (an Albuquerque pin for a Grant County item) is not.
+COUNTY_PARENTS = {
+    "cibola": {"valencia"}, "los alamos": {"sandoval", "santa fe"}, "catron": {"socorro"}, "harding": {"mora", "union"},
+    "lea": {"chaves", "eddy"}, "curry": {"quay", "roosevelt"}, "roosevelt": {"chaves", "guadalupe"},
+    "quay": {"guadalupe"}, "torrance": {"valencia", "lincoln", "bernalillo", "santa fe", "san miguel"},
+    "sandoval": {"bernalillo", "rio arriba"}, "mckinley": {"bernalillo", "valencia"},
+    "otero": {"doña ana", "dona ana", "lincoln", "socorro"}, "luna": {"grant", "doña ana", "dona ana"},
+    "sierra": {"socorro", "doña ana", "dona ana", "grant"}, "hidalgo": {"grant"},
+    "de baca": {"chaves", "guadalupe", "roosevelt"}, "debaca": {"chaves", "guadalupe", "roosevelt"},
+    "union": {"colfax", "mora", "san miguel"}, "san juan": {"rio arriba"}, "eddy": {"lincoln", "chaves"},
+    "chaves": {"lincoln"}, "guadalupe": {"san miguel"}, "grant": {"doña ana", "dona ana"}, "colfax": {"mora"},
+    "lincoln": {"socorro", "doña ana", "dona ana"}, "valencia": {"bernalillo"},
+}
+
+
+def county_fits(record_county: str | None, town_county: str | None) -> bool:
+    """False only when the record names a New Mexico county that the town has never belonged to."""
+    rc, tc = _norm_county(record_county), _norm_county(town_county)
+    if not rc or not tc or rc not in _NM_COUNTY_NAMES or rc == tc:
+        return True
+    return rc in COUNTY_PARENTS.get(tc, set()) or tc in COUNTY_PARENTS.get(rc, set())
+
+
 _COUNTY_PHRASE = re.compile(r"\b[\w ]{0,20}?\b(?:county|co\.)\b|\bcondado\s+de\s+\w+", re.I)
 
 
@@ -188,8 +213,10 @@ def resolve_town(row: dict, recheck: bool = False) -> Town | None:
     city = (row.get("city") or "").strip()
     if city:
         t = town_by_name(city) or nm_town(city, row.get("county"), recheck)
-        if t:
+        if t and county_fits(row.get("county"), t.county):
             return t
+        if t:
+            return None  # the town says one county, the record another: don't guess (Albuquerque pin for Grant County)
     address = _COUNTY_PHRASE.sub(" ", row.get("address_raw") or "")
     found = find_towns(address)
     if found:
@@ -197,7 +224,9 @@ def resolve_town(row: dict, recheck: bool = False) -> Town | None:
     if not city:
         town_from_paper = paper_town(row.get("source_url"))
         if town_from_paper:
-            return town_by_name(town_from_paper) or nm_town(town_from_paper, row.get("county"), recheck, trusted=True)
+            t = town_by_name(town_from_paper) or nm_town(town_from_paper, row.get("county"), recheck, trusted=True)
+            # An Albuquerque paper's item about Grant County is not in Albuquerque.
+            return t if t and county_fits(row.get("county"), t.county) else None
     return None
 
 
@@ -248,7 +277,7 @@ def geocode_row(row: dict, recheck: bool = False) -> dict:
 
 
 def _select(retry_failed: bool, recheck_towns: bool, after_id: int, page: int):
-    from .common.db import db
+    from .common.db import db, retry
 
     q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year,event_id,source_url")
     if recheck_towns:
@@ -265,7 +294,7 @@ def _select(retry_failed: bool, recheck_towns: bool, after_id: int, page: int):
 def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False, max_minutes: float = 40):
     """Place records, a page at a time (the API returns at most 1,000 rows per request) until none are
     left, `limit` is reached or `max_minutes` pass. Paging by id, so a re-check never loops."""
-    from .common.db import db
+    from .common.db import db, retry
     from .common.runlog import PipelineRun
 
     counts: dict[str, int] = {}
@@ -274,21 +303,21 @@ def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False, ma
     t0 = time.monotonic()
     with PipelineRun("geocode") as run:
         while done < limit and (time.monotonic() - t0) / 60 < max_minutes:
-            rows = _select(retry_failed, recheck_towns, last_id, min(1000, limit - done))
+            rows = retry(lambda: _select(retry_failed, recheck_towns, last_id, min(1000, limit - done)))
             if not rows:
                 break
             for r in rows:
                 last_id = r["id"]
                 run.items_in += 1
                 upd = geocode_row(r, recheck=recheck_towns)
-                db().table("ap_incidents").update(upd).eq("id", r["id"]).execute()
+                retry(lambda: db().table("ap_incidents").update(upd).eq("id", r["id"]).execute())
                 if r.get("event_id"):
                     if upd["geocode_status"] == "failed":
                         # No New Mexico town after all: detach it, so its event loses this record (and is hidden
                         # if nothing else backs it). If it's placed later, dedupe gives it a fresh event.
-                        db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute()
+                        retry(lambda: db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute())
                     # Move (or remove) the event to match.
-                    db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute()
+                    retry(lambda: db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute())
                 k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
                 counts[k] = counts.get(k, 0) + 1
                 run.items_out += 1 if upd["geocode_status"] == "ok" else 0

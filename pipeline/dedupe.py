@@ -16,7 +16,7 @@ from anthropic import Anthropic
 
 from .common.ai import create_with_tool, tool_input
 from .common.config import MODEL_FAST as MODEL_DEDUPE
-from .common.db import db
+from .common.db import db, retry
 from .common.runlog import PipelineRun
 
 client = Anthropic()
@@ -48,6 +48,12 @@ def describe(r: dict) -> str:
 
 
 def _make_event(r: dict) -> dict:
+    return retry(lambda: _make_event_once(r))
+
+
+def _make_event_once(r: dict) -> dict:
+    if r.get("event_id"):  # a retry after the insert already went through
+        return r
     ev = db().table("ap_events").insert({
         "record_type": r.get("record_type") or "death",
         "cause_category": r.get("cause_category") or "unknown",
