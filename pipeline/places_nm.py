@@ -111,6 +111,10 @@ NM_PLACE_NAMES = [
     "Doña Ana", "Rincon", "Engle", "Cutter", "Cabezon", "San Ysidro", "Zia", "Cochiti", "Santo Domingo",
     "San Felipe", "Pena Blanca", "Peña Blanca", "Los Alamos", "White Rock", "Velarde", "Embudo", "Dixon", "Penasco",
     "Peñasco", "Trampas", "Truchas", "Ojo Caliente", "El Rito", "Tres Piedras", "Costilla", "Amalia",
+    "Mora", "Kelly", "Sabinal", "Lemitar", "Polvadera", "San Acacia", "La Joya", "Bernardo", "Cubero", "San Rafael",
+    "Seboyeta", "Cebolleta", "San Mateo", "Fort Stanton", "Picacho", "Lake Valley", "Chloride", "Winston",
+    "Fairview", "Cuchillo", "Monticello", "Gallina", "Coyote", "Youngsville", "Ensenada", "Lumberton", "Monero",
+    "Gallup", "Gibson", "Clarkville", "Allison", "Cimarron", "Van Houten", "Sugarite", "Yankee", "Brilliant",
 ]
 
 NM_COUNTIES = [

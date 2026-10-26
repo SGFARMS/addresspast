@@ -91,7 +91,7 @@ def test_geocode_rules(monkeypatch):
     from pipeline import geocode as g
 
     monkeypatch.setattr(g, "census", lambda a: (35.09, -106.65, "412 N 5TH ST, ALBUQUERQUE, NM, 87102"))
-    monkeypatch.setattr(g, "photon", lambda q: {"geometry": {"coordinates": [-106.66, 35.08]},
+    monkeypatch.setattr(g, "photon", lambda q, places_only=False: {"geometry": {"coordinates": [-106.66, 35.08]},
                                                  "properties": {"name": "KiMo Theatre", "type": "house"}})
     modern = g.geocode_row({"address_raw": "412 N. Fifth St.", "city": "Albuquerque", "location_precision": "street_address", "incident_year": 1998})
     assert modern["geocode_precision"] == "street" and modern["geocode_status"] == "ok"
@@ -107,14 +107,14 @@ def test_geocode_rules(monkeypatch):
     assert far["geocode_status"] == "failed"  # Photon's answer isn't a New Mexico place named El Paso
 
     # Anywhere else in New Mexico: the town comes from Photon (OpenStreetMap).
-    monkeypatch.setattr(g, "photon", lambda q: {"geometry": {"coordinates": [-108.2742, 32.7701]},
+    monkeypatch.setattr(g, "photon", lambda q, places_only=False: {"geometry": {"coordinates": [-108.2742, 32.7701]},
                                                  "properties": {"name": "Silver City", "osm_key": "place", "osm_value": "town",
                                                                 "county": "Grant County"}})
     sc = g.geocode_row({"address_raw": "", "city": "Silver City", "location_precision": "city_only", "incident_year": 1912})
     assert sc["geocode_status"] == "ok" and sc["county"] == "Grant" and sc["geocode_precision"] == "city"
 
     # A wire story from New York must not land on the tiny "New York" in Cibola County, NM.
-    monkeypatch.setattr(g, "photon", lambda q: {"geometry": {"coordinates": [-107.527, 35.058]},
+    monkeypatch.setattr(g, "photon", lambda q, places_only=False: {"geometry": {"coordinates": [-107.527, 35.058]},
                                                  "properties": {"name": "New York", "osm_value": "hamlet", "county": "Cibola County"}})
     ny = g.geocode_row({"address_raw": "", "city": "New York", "county": None, "location_precision": "city_only", "incident_year": 1912})
     assert ny["geocode_status"] == "failed" and ny["lat"] is None

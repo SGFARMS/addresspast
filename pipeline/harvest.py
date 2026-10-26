@@ -299,7 +299,8 @@ class Harvester:
                 plain.append(p.url)
                 continue
             lang = "es" if any(l.startswith("span") for l in p.languages) else detect_language(" ".join(windows))
-            page = {"url": p.url, "source_name": clean_title(p.paper), "published_date": p.date, "language": lang}
+            page = {"url": p.url, "source_name": clean_title(p.paper), "published_date": p.date, "language": lang,
+                    "paper_city": (p.paper_cities or [None])[0]}
             prompt = build_prompt_text(windows, page["source_name"], (p.paper_cities or [None])[0], p.date)
             s.candidates += 1
             s.candidate_chars += len(prompt)

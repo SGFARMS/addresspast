@@ -74,13 +74,16 @@ def census(address: str) -> tuple[float, float, str] | None:
     return hit
 
 
-def photon(query: str) -> dict | None:
-    key = "p:" + query.lower()
+def photon(query: str, places_only: bool = False) -> dict | None:
+    key = ("pp:" if places_only else "p:") + query.lower()
     if key in _cache:
         return _cache[key]  # type: ignore[return-value]
     _pace("photon")
     try:
-        r = _session.get(PHOTON_URL, params={"q": query, "limit": 1, "lang": "en", "bbox": ",".join(map(str, NM_BBOX))}, timeout=30)
+        params = {"q": query, "limit": 1, "lang": "en", "bbox": ",".join(map(str, NM_BBOX))}
+        if places_only:
+            params["osm_tag"] = "place"  # towns and villages only, not a same-named street or building
+        r = _session.get(PHOTON_URL, params=params, timeout=30)
         r.raise_for_status()
         feats = r.json().get("features") or []
     except (requests.RequestException, ValueError):
@@ -122,19 +125,19 @@ def plausibly_nm(city: str, county: str | None) -> bool:
     return _norm_county(county) in _NM_COUNTY_NAMES
 
 
-def nm_town(name: str | None, county: str | None = None, recheck: bool = False) -> Town | None:
+def nm_town(name: str | None, county: str | None = None, recheck: bool = False, trusted: bool = False) -> Town | None:
     """Any New Mexico town, looked up on Photon (OpenStreetMap), for places outside the pilot list.
 
     recheck: the record was placed before, so its county may be one this geocoder filled in from
     Photon itself; a county that merely repeats Photon's answer is then no evidence the place is in NM."""
-    if not name or not name.strip() or not plausibly_nm(name, county):
+    if not name or not name.strip() or not (trusted or plausibly_nm(name, county)):
         return None
     key = "t:" + name.strip().lower()
     if key in _cache:
         town = _cache[key]
     else:
         town = None
-        f = photon(f"{name.strip()}, New Mexico")
+        f = photon(f"{name.strip()}, New Mexico", places_only=True)
         if f:
             lng, lat = f["geometry"]["coordinates"][:2]
             props = f.get("properties") or {}
@@ -144,7 +147,7 @@ def nm_town(name: str | None, county: str | None = None, recheck: bool = False) 
                 osm_county = (props.get("county") or "").replace(" County", "").strip()  # keep OSM's casing (McKinley)
                 town = Town(label, osm_county, float(lat), float(lng), ())
         _cache[key] = town
-    if (recheck and town and name.strip().lower() not in _KNOWN_NM
+    if (recheck and not trusted and town and name.strip().lower() not in _KNOWN_NM
             and _norm_county(county) == _norm_county(town.county)):
         return None
     return town  # type: ignore[return-value]
@@ -157,15 +160,39 @@ def _county_name(c: str) -> str | None:
     return c if any(ch.isupper() for ch in c) else c.title()
 
 
+_LCCN_RE = re.compile(r"/resource/([a-z]{0,3}\d{6,12})/")
+
+
+def paper_town(source_url: str | None) -> str | None:
+    """The town a Chronicling America paper was printed in (from the page URL's LCCN)."""
+    m = _LCCN_RE.search(source_url or "")
+    if not m:
+        return None
+    from .sources.bulk_ocr import paper_info
+
+    cities = paper_info(m.group(1)).get("cities") or []
+    return cities[0].title() if cities else None
+
+
 def resolve_town(row: dict, recheck: bool = False) -> Town | None:
-    """Pilot towns from the built-in list first (with OCR variants); anywhere else in NM via Photon."""
+    """Pilot towns from the built-in list first (with OCR variants); anywhere else in NM via Photon.
+    A record with no town at all is a local item: it belongs to the town the paper was printed in."""
+    from_paper = False
+    if not (row.get("city") or "").strip():
+        found = find_towns(row.get("address_raw") or "")
+        if found:
+            return found[0]
+        town_from_paper = paper_town(row.get("source_url"))
+        if town_from_paper:
+            row, from_paper = {**row, "city": town_from_paper}, True
     t = town_by_name(row.get("city"))
     if t:
         return t
     found = find_towns(f"{row.get('address_raw') or ''} {row.get('city') or ''}")
     if found:
         return found[0]
-    return nm_town(row.get("city"), row.get("county"), recheck)
+    # A New Mexico paper's own town is New Mexico by definition, so it skips the plausibility check.
+    return nm_town(row.get("city"), row.get("county"), recheck, trusted=from_paper)
 
 
 def geocode_row(row: dict, recheck: bool = False) -> dict:
@@ -218,7 +245,7 @@ def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False):
     from .common.db import db
     from .common.runlog import PipelineRun
 
-    q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year,event_id")
+    q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year,event_id,source_url")
     if recheck_towns:
         # Re-place every town-level record with the current rules (fixes earlier wrong statewide matches).
         q = q.or_("geocode_status.is.null,geocode_status.eq.failed,geocode_precision.eq.city")

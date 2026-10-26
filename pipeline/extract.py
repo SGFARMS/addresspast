@@ -143,7 +143,8 @@ def to_rows(page: dict, items: list[dict], model: str | None = None) -> list[dic
             "incident_date": it.get("incident_date"),
             "address_raw": (it.get("address_raw") or "").strip()[:300],
             "unit": unit[:40] if unit else None,
-            "city": it.get("city"),
+            # Local items often leave the town implied ("at his home on Fourth street"): it's the paper's town.
+            "city": it.get("city") or ((page.get("paper_city") or "").title() or None),
             "county": (it.get("county") or "").replace(" County", "").strip() or None,
             "location_precision": clean_precision(it.get("location_precision"), it.get("address_raw")),
             "place_kind": kind,
