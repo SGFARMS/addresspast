@@ -232,6 +232,7 @@ def test_county_history_decides_town_fit():
     assert g.county_fits("Valencia", "Cibola")        # Cubero, Valencia County, 1910: right for its time
     assert g.county_fits("Socorro", "Sierra")         # Chloride before Sierra County existed
     assert not g.county_fits("Grant", "bernalillo")   # a Grant County item pinned on Albuquerque
+    assert g.county_fits("Dona Ana", "Doña Ana") and g.county_fits("DeBaca", "De Baca")  # spellings
     assert g.county_fits(None, "bernalillo") and g.county_fits("Maricopa", "bernalillo")  # nothing to compare
     r = g.geocode_row({"address_raw": "", "city": "Albuquerque", "county": "Grant", "location_precision": "city_only",
                        "incident_year": 1910})

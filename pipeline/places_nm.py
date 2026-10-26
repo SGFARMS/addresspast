@@ -118,7 +118,7 @@ NM_PLACE_NAMES = [
 ]
 
 NM_COUNTIES = [
-    "bernalillo", "catron", "chaves", "cibola", "colfax", "curry", "de baca", "dona ana", "doña ana", "eddy", "grant",
+    "bernalillo", "catron", "chaves", "cibola", "colfax", "curry", "de baca", "debaca", "dona ana", "doña ana", "eddy", "grant",
     "guadalupe", "harding", "hidalgo", "lea", "lincoln", "los alamos", "luna", "mckinley", "mora", "otero", "quay",
     "rio arriba", "roosevelt", "sandoval", "san juan", "san miguel", "santa fe", "sierra", "socorro", "taos",
     "torrance", "union", "valencia",

@@ -113,7 +113,9 @@ _NM_COUNTY_NAMES = set(NM_COUNTIES)
 
 
 def _norm_county(c: str | None) -> str:
-    return (c or "").replace(" County", "").replace(" county", "").strip().lower()
+    """'Doña Ana County' / 'Dona Ana' / 'DeBaca' all compare equal to their usual spelling."""
+    c = (c or "").replace(" County", "").replace(" county", "").strip().lower().replace("ñ", "n")
+    return {"debaca": "de baca"}.get(c, c)
 
 
 def plausibly_nm(city: str, county: str | None) -> bool:
