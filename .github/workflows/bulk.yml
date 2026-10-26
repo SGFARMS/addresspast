@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "discover | batches"
+        description: "discover | batches | fars-inspect"
         required: true
         default: discover
 
@@ -23,4 +23,9 @@ jobs:
           cache-dependency-path: pipeline/requirements.txt
       - run: pip install -r pipeline/requirements.txt
       - name: Run
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh bulk python -m pipeline.sources.bulk_ocr ${{ inputs.command }}
+        run: |
+          if [ "${{ inputs.command }}" = "fars-inspect" ]; then
+            for y in 2001 2005 2007; do NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-inspect-$y python -m pipeline.fars inspect $y; done
+          else
+            NOTICE_ON_SUCCESS=1 .github/scripts/run.sh bulk python -m pipeline.sources.bulk_ocr ${{ inputs.command }}
+          fi
