@@ -241,9 +241,8 @@ def geocode_row(row: dict, recheck: bool = False) -> dict:
     return {**at_town, "geocode_status": "ok"}  # city_only: the town is exactly what we know
 
 
-def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False):
+def _select(retry_failed: bool, recheck_towns: bool, after_id: int, page: int):
     from .common.db import db
-    from .common.runlog import PipelineRun
 
     q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year,event_id,source_url")
     if recheck_towns:
@@ -254,38 +253,51 @@ def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False):
         q = q.or_("geocode_status.is.null,geocode_status.eq.failed")
     else:
         q = q.is_("geocode_status", "null")
-    rows = (
-        q
-        .eq("hidden", False)
-        .order("id")
-        .limit(limit)
-        .execute()
-        .data
-    )
+    return q.eq("hidden", False).gt("id", after_id).order("id").limit(page).execute().data or []
+
+
+def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False, max_minutes: float = 40):
+    """Place records, a page at a time (the API returns at most 1,000 rows per request) until none are
+    left, `limit` is reached or `max_minutes` pass. Paging by id, so a re-check never loops."""
+    from .common.db import db
+    from .common.runlog import PipelineRun
+
     counts: dict[str, int] = {}
+    done = 0
+    last_id = 0
+    t0 = time.monotonic()
     with PipelineRun("geocode") as run:
-        for r in rows:
-            run.items_in += 1
-            upd = geocode_row(r, recheck=recheck_towns)
-            db().table("ap_incidents").update(upd).eq("id", r["id"]).execute()
-            if r.get("event_id"):
-                if upd["geocode_status"] == "failed":
-                    # No New Mexico town after all: detach it, so its event loses this record (and is hidden
-                    # if nothing else backs it). If it's placed later, dedupe gives it a fresh event.
-                    db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute()
-                # Move (or remove) the event to match.
-                db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute()
-            k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
-            counts[k] = counts.get(k, 0) + 1
-            run.items_out += 1 if upd["geocode_status"] == "ok" else 0
+        while done < limit and (time.monotonic() - t0) / 60 < max_minutes:
+            rows = _select(retry_failed, recheck_towns, last_id, min(1000, limit - done))
+            if not rows:
+                break
+            for r in rows:
+                last_id = r["id"]
+                run.items_in += 1
+                upd = geocode_row(r, recheck=recheck_towns)
+                db().table("ap_incidents").update(upd).eq("id", r["id"]).execute()
+                if r.get("event_id"):
+                    if upd["geocode_status"] == "failed":
+                        # No New Mexico town after all: detach it, so its event loses this record (and is hidden
+                        # if nothing else backs it). If it's placed later, dedupe gives it a fresh event.
+                        db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute()
+                    # Move (or remove) the event to match.
+                    db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute()
+                k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
+                counts[k] = counts.get(k, 0) + 1
+                run.items_out += 1 if upd["geocode_status"] == "ok" else 0
+                done += 1
+                if (time.monotonic() - t0) / 60 >= max_minutes:
+                    break
         run.meta = {"counts": counts}
-    print("geocoded", len(rows), counts)
+    print("geocoded", done, counts)
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=2000)
+    ap.add_argument("--limit", type=int, default=100000)
+    ap.add_argument("--max-minutes", type=float, default=40)
     ap.add_argument("--retry-failed", action="store_true", help="also retry records that found no town before")
     ap.add_argument("--recheck-towns", action="store_true", help="re-place every town-level record with the current rules")
     a = ap.parse_args()
-    main(a.limit, a.retry_failed, a.recheck_towns)
+    main(a.limit, a.retry_failed, a.recheck_towns, a.max_minutes)
