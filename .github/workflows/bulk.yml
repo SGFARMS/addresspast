@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "discover | batches | fars-inspect"
+        description: "discover | batches | fars-inspect | peek-fra | peek-msha"
         required: true
         default: discover
 
@@ -24,7 +24,9 @@ jobs:
       - run: pip install -r pipeline/requirements.txt
       - name: Run
         run: |
-          if [ "${{ inputs.command }}" = "fars-inspect" ]; then
+          if [ "${{ inputs.command }}" = "peek-fra" ] || [ "${{ inputs.command }}" = "peek-msha" ]; then
+            c="${{ inputs.command }}"; NOTICE_ON_SUCCESS=1 .github/scripts/run.sh "$c" python -m pipeline.sources.peek "${c#peek-}"
+          elif [ "${{ inputs.command }}" = "fars-inspect" ]; then
             for y in 2001 2005 2007; do NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-inspect-$y python -m pipeline.fars inspect $y; done
           else
             NOTICE_ON_SUCCESS=1 .github/scripts/run.sh bulk python -m pipeline.sources.bulk_ocr ${{ inputs.command }}
