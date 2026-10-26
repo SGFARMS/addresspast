@@ -51,9 +51,16 @@ def news():
         try:
             rb = requests.get(site + "/robots.txt", headers=UA, timeout=30)
             lines = [l.strip() for l in rb.text.splitlines() if re.match(r"(?i)(user-agent|disallow|sitemap|crawl-delay)", l.strip())]
-            print(f"== {name} robots {rb.status_code}: {lines[:25]}")
+            # Which AI crawlers does the outlet turn away? (we honour these: no AI reading of opted-out sites)
+            ai_blocks, agent = [], None
+            for l in lines:
+                if l.lower().startswith("user-agent"):
+                    agent = l.split(":", 1)[1].strip()
+                elif l.lower().startswith("disallow") and l.split(":", 1)[1].strip() == "/" and agent:
+                    ai_blocks.append(agent)
+            print(f"== {name}: robots {rb.status_code}; full site blocked for: {sorted(set(ai_blocks))}")
             maps = [l.split(":", 1)[1].strip() for l in lines if l.lower().startswith("sitemap")]
-            for m in (maps or [site + "/sitemap.xml"])[:2]:
+            for m in (maps or [site + "/sitemap.xml"])[:1]:
                 sm = requests.get(m, headers=UA, timeout=60)
                 locs = re.findall(r"<loc>([^<]+)</loc>", sm.text)
                 print(f"   sitemap {m} -> {sm.status_code}, {len(locs)} entries, e.g. {locs[:3]} ... {locs[-2:]}")

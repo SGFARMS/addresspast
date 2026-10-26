@@ -61,8 +61,23 @@ def _coord(v) -> float | None:
 
 
 # ── FRA ─────────────────────────────────────────────────────────────────────────────────────────
+def _get(url: str, params: dict | None = None, timeout: int = 300):
+    """data.transportation.gov is slow at times: three tries with a long timeout."""
+    import time
+
+    for i in range(3):
+        try:
+            r = requests.get(url, params=params, headers=UA, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except (requests.RequestException, ValueError):
+            if i == 2:
+                raise
+            time.sleep(20 * (i + 1))
+
+
 def _field(dataset: str, *patterns: str) -> str:
-    cols = [c.get("fieldName") or "" for c in requests.get(FRA_COLUMNS.format(id=dataset), headers=UA, timeout=120).json()]
+    cols = [c.get("fieldName") or "" for c in _get(FRA_COLUMNS.format(id=dataset))]
     for p in patterns:
         hit = next((c for c in cols if re.fullmatch(p, c, re.I)), None)
         if hit:
@@ -71,7 +86,7 @@ def _field(dataset: str, *patterns: str) -> str:
 
 
 def fra_rows() -> list[dict]:
-    data = requests.get(FRA_INCIDENTS, params={"$where": "state='35'", "$limit": 50000}, headers=UA, timeout=300).json()
+    data = _get(FRA_INCIDENTS, {"$where": "state='35'", "$limit": 50000})
     fatal = [r for r in data if max(_num(r.get("totkld")), _num(r.get("userkld")), _num(r.get("caskldrr"))) > 0]
     # GPS for each crossing from the inventory
     id_col = _field("m2f8-22s6", r"crossingid", r"crossing_id", r"crossing", r"gxid")
@@ -81,11 +96,11 @@ def fra_rows() -> list[dict]:
     where: dict[str, tuple[float, float]] = {}
     for i in range(0, len(ids), 40):
         chunk = ids[i : i + 40]
-        inv = requests.get(FRA_INVENTORY, params={
+        inv = _get(FRA_INVENTORY, {
             "$select": f"{id_col},{lat_col},{lng_col}",
             "$where": f"{id_col} in ({','.join(repr(x) for x in chunk)})",
             "$limit": 1000,
-        }, headers=UA, timeout=120).json()
+        })
         for row in inv if isinstance(inv, list) else []:
             lat, lng = _coord(row.get(lat_col)), _coord(row.get(lng_col))
             if _in_nm(lat, lng):
