@@ -18,6 +18,7 @@ from .common.ai import create_with_tool, tool_input
 from .common.config import MODEL_FAST as MODEL_DEDUPE
 from .common.db import db, retry
 from .common.runlog import PipelineRun
+from .dedupe_rules import could_be_same
 
 client = Anthropic()
 
@@ -105,14 +106,25 @@ def merge(keep_event: str, drop_event: str):
 
 
 def main(limit: int, max_minutes: float = 40):
+    t0 = time.monotonic()
     with PipelineRun("dedupe") as run:
         fresh = ensure_events(run, max_minutes)[:limit]
         for r in fresh:
+            if (time.monotonic() - t0) / 60 >= max_minutes * 1.5:
+                print("  dedupe: time limit, the rest waits for the next run", flush=True)
+                break
             if r.get("record_type") == "road_death":
                 continue  # official crash records (FARS) are one row per crash: nothing to merge, no AI calls
-            cands = db().rpc("ap_dedupe_candidates", {"p_incident_id": r["id"]}).execute().data or []
-            for c in cands:
-                other = db().table("ap_incidents").select(FIELDS).eq("id", c["candidate_id"]).single().execute().data
+            cands = retry(lambda: db().rpc("ap_dedupe_candidates", {"p_incident_id": r["id"]}).execute().data) or []
+            for c in cands[:8]:
+                other = retry(lambda: db().table("ap_incidents").select(FIELDS).eq("id", c["candidate_id"]).single().execute().data)
+                if not could_be_same(r, other):
+                    a, b = sorted([r["id"], other["id"]])
+                    retry(lambda: db().table("ap_dedupe_checks").upsert({
+                        "incident_a": a, "incident_b": b, "same_event": False,
+                        "rationale": "dates too far apart", "model": "date-rule",
+                    }).execute())
+                    continue
                 msg = create_with_tool(
                     client,
                     "decide",

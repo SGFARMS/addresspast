@@ -236,3 +236,13 @@ def test_county_history_decides_town_fit():
     r = g.geocode_row({"address_raw": "", "city": "Albuquerque", "county": "Grant", "location_precision": "city_only",
                        "incident_year": 1910})
     assert r["geocode_status"] == "failed"
+
+
+def test_dedupe_date_rule():
+    from pipeline.dedupe_rules import could_be_same
+
+    assert could_be_same({"incident_date": "1912-03-08"}, {"incident_date": "1912-03-10"})
+    assert not could_be_same({"incident_date": "1912-03-08"}, {"incident_date": "1912-09-02"})
+    assert not could_be_same({"incident_date": "1912-03-01"}, {"incident_date": "1912-03-25"})
+    assert could_be_same({"incident_date": "1912"}, {"incident_date": "1912-06"})  # too vague to rule out
+    assert not could_be_same({"published_date": "1912-01-05"}, {"published_date": "1912-08-01"})
