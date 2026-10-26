@@ -68,5 +68,55 @@ def news():
             print(f"== {name}: {type(e).__name__}: {str(e)[:150]}")
 
 
+ARCHIVE_SITES = ["https://www.abqjournal.com", "https://www.news-bulletin.com", "https://www.rrobserver.com",
+                 "https://searchlightnm.org"]
+DEATH_SLUG = re.compile(r"(killed|dies|died|dead|death|fatal|shot|shooting|homicide|murder|stabb|crash|body|drown|slain)", re.I)
+
+
+def archive():
+    """Article sitemaps of the outlets that allow AI reading: shape, newest URLs, and one article's text."""
+    from urllib.robotparser import RobotFileParser
+
+    for site in ARCHIVE_SITES:
+        try:
+            rp = RobotFileParser(site + "/robots.txt")
+            rp.read()
+            ok = {a: rp.can_fetch(a, site + "/news/") for a in ("ClaudeBot", "Claude-User", "AddressPast-harvester")}
+            print(f"== {site}: robots can_fetch {ok}; sitemaps listed {rp.site_maps()}")
+            idx_urls = (rp.site_maps() or []) + [site + "/sitemapindex.xml", site + "/sitemap_index.xml", site + "/sitemap.xml"]
+            for idx in dict.fromkeys(idx_urls):
+                r = requests.get(idx, headers=UA, timeout=60)
+                locs = [l.replace("&amp;", "&") for l in re.findall(r"<loc>([^<]+)</loc>", r.text)]
+                print(f"   {idx} -> {r.status_code} {r.headers.get('content-type', '')[:30]}, {len(locs)} entries {locs[:2]} .. {locs[-2:]}")
+                if not locs:
+                    continue
+                subs = [l for l in locs if "sitemap" in l]
+                pick = subs[-1] if subs else None
+                arts = locs if not subs else []
+                if pick:
+                    r2 = requests.get(pick, headers=UA, timeout=60)
+                    arts = [l.replace("&amp;", "&") for l in re.findall(r"<loc>([^<]+)</loc>", r2.text)]
+                    mods = re.findall(r"<lastmod>([^<]+)</lastmod>", r2.text)
+                    print(f"   chunk {pick} -> {r2.status_code}, {len(arts)} urls, lastmod {mods[:1]}..{mods[-1:]}")
+                    print(f"   first urls {arts[:3]}")
+                    if subs and len(subs) > 1:
+                        r3 = requests.get(subs[0], headers=UA, timeout=60)
+                        m3 = re.findall(r"<lastmod>([^<]+)</lastmod>", r3.text)
+                        a3 = re.findall(r"<loc>([^<]+)</loc>", r3.text)
+                        print(f"   oldest chunk {subs[0]}: {len(a3)} urls, lastmod {m3[:1]}, e.g. {a3[:2]}")
+                hits = [a for a in arts if DEATH_SLUG.search(a.rsplit("/", 2)[-2] if a.endswith("/") else a.rsplit("/", 1)[-1])]
+                print(f"   death-word slugs in that chunk: {len(hits)} of {len(arts)}: {hits[:4]}")
+                if hits:
+                    from .rss import html_to_text
+
+                    page = requests.get(hits[0], headers=UA, timeout=60)
+                    text = html_to_text(page.text)
+                    pay = bool(re.search(r"(subscribe to continue|subscriber[- ]only|paywall|already a subscriber)", page.text, re.I))
+                    print(f"   article {page.status_code}: {len(text)} chars, paywall words {pay}; starts: {text[:400]!r}")
+                break
+        except Exception as e:
+            print(f"== {site}: {type(e).__name__}: {str(e)[:200]}")
+
+
 if __name__ == "__main__":
-    {"fra": fra, "msha": msha, "news": news}[sys.argv[1]]()
+    {"fra": fra, "msha": msha, "news": news, "archive": archive}[sys.argv[1]]()

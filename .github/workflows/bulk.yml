@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "discover | batches | fars-inspect | peek-fra | peek-msha | public-dry | peek-news"
+        description: "discover | batches | fars-inspect | peek-fra | peek-msha | public-dry | peek-news | peek-archive"
         required: true
         default: discover
 
@@ -24,7 +24,7 @@ jobs:
       - run: pip install -r pipeline/requirements.txt
       - name: Run
         run: |
-          if [ "${{ inputs.command }}" = "peek-fra" ] || [ "${{ inputs.command }}" = "peek-msha" ] || [ "${{ inputs.command }}" = "peek-news" ]; then
+          if [ "${{ inputs.command }}" = "peek-fra" ] || [ "${{ inputs.command }}" = "peek-msha" ] || [ "${{ inputs.command }}" = "peek-news" ] || [ "${{ inputs.command }}" = "peek-archive" ]; then
             c="${{ inputs.command }}"; NOTICE_ON_SUCCESS=1 .github/scripts/run.sh "$c" python -m pipeline.sources.peek "${c#peek-}"
           elif [ "${{ inputs.command }}" = "public-dry" ]; then
             NOTICE_ON_SUCCESS=1 .github/scripts/run.sh public-dry python -m pipeline.public_deaths all --dry-run

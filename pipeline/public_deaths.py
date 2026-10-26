@@ -40,7 +40,7 @@ def _in_nm(lat: float | None, lng: float | None) -> bool:
 
 
 def _title(v: str | None) -> str | None:
-    v = re.sub(r"\s+NEW MEXICO\s*$", "", (v or "").strip(), flags=re.I).strip()
+    v = re.sub(r"(,?\s+(NEW MEXICO|N\.?\s?M\.?))+\s*$", "", (v or "").strip(), flags=re.I).strip()
     if not v or re.search(r"^(unknown|n/?a|none|0)$", v, re.I):
         return None
     return " ".join(w.capitalize() for w in v.lower().split())
@@ -112,14 +112,15 @@ def fra_rows() -> list[dict]:
         date = f"{y}-{m:02d}-{d:02d}" if 1 <= m <= 12 and 1 <= d <= 31 else str(y)
         killed = int(max(_num(r.get("totkld")), _num(r.get("userkld")), _num(r.get("caskldrr"))))
         highway = (r.get("highway") or "").strip()
-        where_txt = f"the railroad crossing at {highway.title()}" if highway else "a railroad crossing"
+        highway = _title(highway) or ""
+        where_txt = f"the railroad crossing at {highway}" if highway else "a railroad crossing"
         gx = r.get("gxid") or ""
         row = {
             "source_url": f"{FRA_PAGE}#fra-{y}-{r.get('railroad', '')}-{r.get('incdtno', '')}",
             "source_name": f"Federal Railroad Administration crossing incident {r.get('railroad', '')} {r.get('incdtno', '')}".strip(),
             "published_date": None,
             "incident_date": date,
-            "address_raw": (f"Railroad crossing {gx}" + (f", {highway.title()}" if highway else ""))[:300],
+            "address_raw": (f"Railroad crossing {gx}" + (f", {highway}" if highway else ""))[:300],
             "city": _title(r.get("city")) or _title(r.get("station")),
             "county": _title(r.get("county")),
             "location_precision": "intersection",
@@ -135,6 +136,7 @@ def fra_rows() -> list[dict]:
         }
         if gx in where:
             lat, lng = where[gx]
+            row["county"] = None  # incident county is unreliable (e.g. Gallup filed under Valencia); the GPS point decides
             row.update({"lat": lat, "lng": lng, "geocode_status": "ok", "geocode_source": "fra_inventory",
                         "geocode_precision": "street", "matched_address": f"FRA crossing {gx}"})
         out.append(row)
@@ -159,10 +161,13 @@ def msha_rows() -> list[dict]:
     out = []
     for a in accidents:
         m = mines.get(a.get("MINE_ID"), {})
-        name = (m.get("CURRENT_MINE_NAME") or "").strip() or f"Mine {a.get('MINE_ID')}"
+        name = _title(m.get("CURRENT_MINE_NAME")) or f"Mine {a.get('MINE_ID')}"
+        if len(name) <= 6:  # "Sx-Ew", "Mill": say whose mine it is
+            name = f"{name} mine ({_title(m.get('FIPS_CNTY_NM')) or 'New Mexico'} County)"
         mm, dd, yy = (re.findall(r"\d+", a.get("ACCIDENT_DT") or "") + ["", "", ""])[:3]
         date = f"{yy}-{int(mm):02d}-{int(dd):02d}" if yy and mm and dd else (yy or None)
         kind = (a.get("ACCIDENT_TYPE") or "").strip().lower()
+        kind = re.sub(r"[\s.]*\bnec\b\.?", "", kind).strip(" .,")
         kind = "" if not kind or "no value" in kind else f" ({kind})"
         lat, lng = _coord(m.get("LATITUDE")), _coord(m.get("LONGITUDE"))
         if lng and lng > 0:
