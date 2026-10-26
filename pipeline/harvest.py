@@ -150,7 +150,13 @@ class Harvester:
         if rows and not self.args.dry_run:
             from .common.db import db
 
-            db().table("ap_incidents").upsert(rows, on_conflict="source_url,address_raw", ignore_duplicates=True).execute()
+            try:
+                db().table("ap_incidents").upsert(rows, on_conflict="source_url,address_raw", ignore_duplicates=True).execute()
+            except Exception as e:  # one bad record must never stop a run: note it and move on
+                self.stats.errors += 1
+                self.stats.first_error = self.stats.first_error or f"write {page.get('url')}: {type(e).__name__}: {str(e)[:250]}"
+                print(f"  could not save records from {page.get('url')}: {e}", file=sys.stderr, flush=True)
+                return 0
         self.out.rows(rows)
         s = self.stats
         s.records += len(rows)

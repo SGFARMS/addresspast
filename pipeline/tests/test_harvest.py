@@ -187,3 +187,16 @@ def test_weak_keywords_need_company():
     assert candidate_windows(FILLER + "She died after the shooting " + town + FILLER)          # two weak words together
     far = FILLER + "A man was killed. " + ("Unrelated news about the fair. " * 20) + "Albuquerque" + FILLER
     assert candidate_windows(far) == []  # the town is too far from the keyword
+
+
+def test_rows_clean_odd_model_values():
+    page = {"url": "https://example.org/c", "language": "en"}
+    items = [
+        {"address_raw": "", "city": "Gallup", "location_precision": "town", "place_kind": "x", "cause_category": "Murder",
+         "summary": "A death.", "confidence": 0.7},
+        {"address_raw": "Harvey House", "city": "Belen", "location_precision": None, "place_kind": "house",
+         "cause_category": None, "summary": "A death.", "confidence": 0.7},
+    ]
+    a, b = to_rows(page, items)
+    assert a["location_precision"] == "city_only" and a["cause_category"] == "unknown" and a["place_kind"] == "unknown"
+    assert b["location_precision"] == "landmark" and b["cause_category"] == "unknown"

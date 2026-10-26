@@ -42,6 +42,15 @@ def main():
         ("Newspaper pages read so far", count("ap_scanned_pages", col="url")),
     ]
     lines = ["## AddressPast record counts", "", "| | |", "|---|---|"] + [f"| {k} | {v:,} |" for k, v in rows]
+    # Which "towns" couldn't be placed: real NM places here mean the geocoder needs a hand.
+    failed = (db().table("ap_incidents").select("city,county").eq("geocode_status", "failed").eq("hidden", False)
+              .limit(5000).execute().data) or []
+    tally: dict[str, int] = {}
+    for r in failed:
+        k = f"{r.get('city') or '(no town)'}" + (f" / {r['county']}" if r.get("county") else "")
+        tally[k] = tally.get(k, 0) + 1
+    top = sorted(tally.items(), key=lambda kv: -kv[1])[:40]
+    lines += ["", "Most common unplaced towns: " + "; ".join(f"{k} ({v})" for k, v in top)]
     print("\n".join(lines))
 
 

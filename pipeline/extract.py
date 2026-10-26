@@ -13,6 +13,26 @@ from .common.scrub import scrub_names
 from .lang import EXTRACTION_SYSTEM, detect_language
 
 PLACE_KINDS = ["house", "apartment_building", "boarding_house_or_hotel", "business", "public_place", "road", "other", "unknown"]
+PRECISIONS = {"street_address", "intersection", "landmark", "city_only"}
+CAUSES = {"natural", "accident", "homicide", "suicide", "fire", "unknown"}
+_PRECISION_ALIASES = {"street": "street_address", "address": "street_address", "city": "city_only", "town": "city_only",
+                      "county": "city_only", "town_only": "city_only", "corner": "intersection", "place": "landmark"}
+
+
+def clean_precision(v, address: str | None) -> str:
+    """The database accepts four values; the model sometimes says 'town', 'city' or nothing."""
+    p = str(v or "").strip().lower().replace(" ", "_")
+    p = _PRECISION_ALIASES.get(p, p)
+    if p in PRECISIONS:
+        return p
+    return "landmark" if (address or "").strip() else "city_only"
+
+
+def clean_cause(v) -> str:
+    c = str(v or "").strip().lower()
+    return c if c in CAUSES else "unknown"
+
+
 REVIEW_KINDS = {"boarding_house_or_hotel": "boarding house or hotel", "business": "business address"}
 
 EXTRACT_TOOL = {
@@ -126,9 +146,9 @@ def to_rows(page: dict, items: list[dict], model: str | None = None) -> list[dic
             "unit": unit[:40] if unit else None,
             "city": it.get("city"),
             "county": (it.get("county") or "").replace(" County", "").strip() or None,
-            "location_precision": it.get("location_precision"),
+            "location_precision": clean_precision(it.get("location_precision"), it.get("address_raw")),
             "place_kind": kind,
-            "cause_category": it.get("cause_category", "unknown"),
+            "cause_category": clean_cause(it.get("cause_category")),
             "summary": summary,
             "summary_scrubbed": True,
             "confidence": round(max(0.0, min(1.0, float(it.get("confidence", 0.5) or 0))), 3),
