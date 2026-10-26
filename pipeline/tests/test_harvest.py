@@ -247,3 +247,13 @@ def test_dedupe_date_rule():
     assert not could_be_same({"incident_date": "1912-03-01"}, {"incident_date": "1912-03-25"})
     assert could_be_same({"incident_date": "1912"}, {"incident_date": "1912-06"})  # too vague to rule out
     assert not could_be_same({"published_date": "1912-01-05"}, {"published_date": "1912-08-01"})
+
+
+def test_dedupe_rule_verdicts():
+    from pipeline.dedupe_rules import rule_verdict
+
+    a = {"incident_date": "1912-03-08", "city": "Gallup", "cause_category": "homicide"}
+    assert rule_verdict(a, {**a, "cause_category": "unknown"}) is True          # two papers, one killing
+    assert rule_verdict(a, {**a, "incident_date": "1912-09-01"}) is False       # months apart
+    assert rule_verdict(a, {**a, "incident_date": "1912-03"}) is None           # model decides
+    assert rule_verdict(a, {**a, "cause_category": "accident"}) is None

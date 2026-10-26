@@ -29,3 +29,21 @@ def could_be_same(a: dict, b: dict) -> bool:
         except ValueError:
             pass
     return True
+
+
+
+def rule_verdict(a: dict, b: dict) -> bool | None:
+    """True = surely the same death, False = surely different, None = ask the model.
+
+    Same: the same exact day, same town and a compatible cause (two papers reporting one death).
+    (Two finds on one page are left to the model: one page can report two different deaths.)
+    Different: dates or publication dates too far apart (could_be_same is False)."""
+    if not could_be_same(a, b):
+        return False
+    ca, cb = a.get("cause_category") or "unknown", b.get("cause_category") or "unknown"
+    causes_fit = ca == cb or "unknown" in (ca, cb)
+    (ay, am, ad), (by, bm, bd) = _ymd(a.get("incident_date")), _ymd(b.get("incident_date"))
+    same_town = (a.get("city") or "").strip().lower() == (b.get("city") or "").strip().lower() != ""
+    if ad and bd and (ay, am, ad) == (by, bm, bd) and same_town and causes_fit:
+        return True
+    return None

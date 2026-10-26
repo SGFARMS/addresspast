@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly) | stats (counts only) | fars-inspect | fars (load NHTSA fatal crashes) | public-deaths (FRA crossings + MSHA mines)"
+        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly) | stats (counts only) | fars-inspect | fars (load NHTSA fatal crashes) | public-deaths (FRA crossings + MSHA mines) | dedupe-sweep (merge duplicates already on the map)"
         required: true
         default: nightly
 
@@ -65,7 +65,8 @@ jobs:
         if: steps.db.outputs.ok == 'true' && (github.event.schedule == '37 8 * * *' || inputs.job == 'nightly' || inputs.job == 'publish')
         run: |
           set -e
-          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500 --max-minutes 45
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500 --max-minutes 30
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 30
           .github/scripts/run.sh translate python -m pipeline.translate --limit 500
           .github/scripts/run.sh parcel-match python -m pipeline.parcels match
 
@@ -85,6 +86,10 @@ jobs:
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars python -m pipeline.fars load --from 2000 --to 2024
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 100 --max-minutes 45
 
+      - name: Merge duplicates already on the map
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'dedupe-sweep'
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 100
+
       - name: Railroad crossing and mine deaths (load, then publish)
         if: steps.db.outputs.ok == 'true' && inputs.job == 'public-deaths'
         run: |
@@ -94,7 +99,7 @@ jobs:
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 300 --max-minutes 30
 
       - name: Record counts
-        if: steps.db.outputs.ok == 'true' && (inputs.job == 'stats' || inputs.job == 'publish' || inputs.job == 'fars' || inputs.job == 'public-deaths')
+        if: steps.db.outputs.ok == 'true' && (inputs.job == 'stats' || inputs.job == 'publish' || inputs.job == 'fars' || inputs.job == 'public-deaths' || inputs.job == 'dedupe-sweep')
         run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
 
       - name: Load Bernalillo parcels (by hand)
