@@ -43,10 +43,50 @@ function toItem(x: any): CheckItem {
   };
 }
 
-async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-  const { data, error } = await serviceClient().rpc(fn, args);
-  if (error) throw new Error(`${fn}: ${error.message}`);
-  return data as T;
+type RpcError = { message?: string; code?: string; details?: string; hint?: string };
+
+/**
+ * One line that says what actually went wrong. A gateway or proxy error (502/503/504, or an
+ * HTML error page) reaches supabase-js with an empty message, which used to log as just
+ * "ap_api_free_check: " with nothing after it. The HTTP status, PostgREST code, details and
+ * hint now go in too.
+ */
+function describeRpcError(fn: string, error: RpcError, status: number, statusText: string): string {
+  const parts = [`HTTP ${status || "no response"}${statusText ? ` ${statusText}` : ""}`];
+  if (error.code) parts.push(`code ${error.code}`);
+  const msg = error.message?.trim() || "(empty message: likely a gateway or network error, not SQL)";
+  let line = `${fn}: ${msg} [${parts.join(", ")}]`;
+  if (error.details) line += ` details: ${String(error.details).slice(0, 300)}`;
+  if (error.hint) line += ` hint: ${String(error.hint).slice(0, 200)}`;
+  return line;
+}
+
+/** Gateway/transport failures are worth one retry; a PostgREST/SQL error (it has a code) is not. */
+function isTransient(error: RpcError, status: number): boolean {
+  if (error.code) return false;
+  if (status === 0 || status === 502 || status === 503 || status === 504) return true;
+  return !error.message || /fetch failed|network|timeout|timed out|econnreset|econnrefused|abort/i.test(error.message);
+}
+
+/**
+ * Calls a Postgres function. Read-only calls retry once after a short pause on a transient
+ * failure (a BaaS restart or deploy blip). Writes pass { retry: false } so nothing runs twice.
+ */
+async function rpc<T>(fn: string, args: Record<string, unknown>, opts: { retry?: boolean } = {}): Promise<T> {
+  const attempts = opts.retry === false ? 1 : 2;
+  let message = `${fn}: failed`;
+  for (let i = 0; i < attempts; i++) {
+    const { data, error, status, statusText } = await serviceClient().rpc(fn, args);
+    if (!error) return data as T;
+    message = describeRpcError(fn, error, status, statusText);
+    if (i + 1 < attempts && isTransient(error, status)) {
+      console.warn(`[rpc] retrying after transient error: ${message}`);
+      await new Promise((r) => setTimeout(r, 400));
+      continue;
+    }
+    break;
+  }
+  throw new Error(message);
 }
 
 export const supabaseRepo: Repo = {
@@ -148,7 +188,7 @@ export const supabaseRepo: Repo = {
   async requestRemoval(r) {
     const d = await rpc<any>("ap_api_request_removal", {
       p_event_id: r.eventId, p_email: r.email, p_relationship: r.relationship, p_reason: r.reason, p_details: r.details,
-    });
+    }, { retry: false });
     return { ok: Boolean(d?.ok), fastLane: Boolean(d?.fast_lane) };
   },
 
