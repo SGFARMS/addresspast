@@ -14,24 +14,32 @@ import requests
 UA = {"User-Agent": "AddressPast-peek/1.0 (+https://history.skyhighwebsites.dev)"}
 
 
+import re
+
+KEEP = re.compile(r"lat|lon|stat|cnty|county|city|kil|kld|high|street|date|year|iyr|month|day|narr|degree|mine_name|name|no_inj|typ|crossing|gxid", re.I)
+
+
 def fra():
     cols = requests.get("https://data.transportation.gov/api/views/icqf-xf4w/columns.json", headers=UA, timeout=120).json()
-    print("FRA columns:", [(c.get("fieldName"), c.get("name")) for c in cols][:120])
+    for c in cols:
+        if KEEP.search(c.get("fieldName") or ""):
+            print("FRA col", c.get("fieldName"), "|", (c.get("description") or "")[:80])
     base = "https://data.transportation.gov/resource/icqf-xf4w.json"
-    rows = requests.get(base, params={"$limit": 2}, headers=UA, timeout=120).json()
-    print("FRA sample:", json.dumps(rows[:1])[:2500] if isinstance(rows, list) else rows)
+    nm = requests.get(base, params={"$limit": 1, "$where": "state='35'"}, headers=UA, timeout=120).json()
+    print("NM row:", nm if not isinstance(nm, list) else {k: v for k, v in (nm[0] if nm else {}).items() if KEEP.search(k)})
+    cnt = requests.get(base, params={"$select": "count(*)", "$where": "state='35'"}, headers=UA, timeout=120).json()
+    print("NM rows:", cnt)
 
 
 def msha():
     for name in ("Accidents", "Mines"):
         r = requests.get(f"https://arlweb.msha.gov/OpenGovernmentData/DataSets/{name}.zip", headers=UA, timeout=300)
-        print(name, r.status_code, len(r.content))
         z = zipfile.ZipFile(io.BytesIO(r.content))
-        f = z.namelist()[0]
-        with z.open(f) as fh:
-            head = [fh.readline().decode("latin-1").rstrip() for _ in range(3)]
-        cols = head[0].split("|")
-        print(name, "file:", f, "columns:", cols)
+        with z.open(z.namelist()[0]) as fh:
+            cols = fh.readline().decode("latin-1").rstrip().split("|")
+        for c in cols:
+            if KEEP.search(c):
+                print(name, "col", c)
 
 
 if __name__ == "__main__":
