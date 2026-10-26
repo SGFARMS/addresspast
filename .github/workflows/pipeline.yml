@@ -17,7 +17,8 @@ on:
         default: nightly
 
 concurrency:
-  group: pipeline
+  # One AddressPast database job at a time: the shared BaaS server has 1 GB of RAM (it ran out on Oct 26).
+  group: addresspast-db
   cancel-in-progress: false
 
 jobs:
