@@ -15,14 +15,11 @@ UA = {"User-Agent": "AddressPast-peek/1.0 (+https://history.skyhighwebsites.dev)
 
 
 def fra():
-    base = "https://data.transportation.gov/resource/bda5-32at.json"
+    cols = requests.get("https://data.transportation.gov/api/views/icqf-xf4w/columns.json", headers=UA, timeout=120).json()
+    print("FRA columns:", [(c.get("fieldName"), c.get("name")) for c in cols][:120])
+    base = "https://data.transportation.gov/resource/icqf-xf4w.json"
     rows = requests.get(base, params={"$limit": 2}, headers=UA, timeout=120).json()
-    print("FRA fields:", sorted(rows[0]) if rows else rows)
-    for k in ("statename", "state", "statecode"):
-        if rows and k in rows[0]:
-            print("state field:", k, rows[0][k])
-    nm = requests.get(base, params={"$limit": 3, "$where": "upper(statename) like '%NEW MEXICO%'"}, headers=UA, timeout=120)
-    print("NM sample:", nm.status_code, json.dumps(nm.json()[:2])[:2500])
+    print("FRA sample:", json.dumps(rows[:1])[:2500] if isinstance(rows, list) else rows)
 
 
 def msha():
@@ -33,7 +30,8 @@ def msha():
         f = z.namelist()[0]
         with z.open(f) as fh:
             head = [fh.readline().decode("latin-1").rstrip() for _ in range(3)]
-        print(name, "file:", f, "\n  header:", head[0][:1500], "\n  row:", head[1][:800])
+        cols = head[0].split("|")
+        print(name, "file:", f, "columns:", cols)
 
 
 if __name__ == "__main__":
