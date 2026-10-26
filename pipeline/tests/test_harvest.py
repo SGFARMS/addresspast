@@ -200,3 +200,17 @@ def test_rows_clean_odd_model_values():
     a, b = to_rows(page, items)
     assert a["location_precision"] == "city_only" and a["cause_category"] == "unknown" and a["place_kind"] == "unknown"
     assert b["location_precision"] == "landmark" and b["cause_category"] == "unknown"
+
+
+def test_fars_old_lowercase_columns():
+    import io
+    import zipfile
+
+    from pipeline.fars import accident_rows, to_incident
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ACCIDENT.CSV", "STATE,ST_CASE,MONTH,DAY,latitude,longitud,FATALS,COUNTY\n35,350007,6,2,35.0418,-106.7137,1,1\n")
+    rows = list(accident_rows(zipfile.ZipFile(buf)))
+    i = to_incident(rows[0], 2001)
+    assert i and i["lat"] == 35.0418 and i["county"] == "Bernalillo" and i["incident_date"] == "2001-06-02"
