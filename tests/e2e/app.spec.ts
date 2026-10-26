@@ -4,20 +4,16 @@ import { expect, test } from "@playwright/test";
 const DOWNTOWN = { label: "Sample St, Albuquerque", lat: 35.0849, lng: -106.651, city: "Albuquerque", county: "Bernalillo", kind: "address" };
 const EMPTY_SPOT = { label: "Quiet Rd, Belen", lat: 34.7, lng: -106.9, city: "Belen", county: "Valencia", kind: "address" };
 
-test.describe("pre-launch", () => {
-  test("waitlist shows and is noindex", async ({ page }) => {
+test.describe("launched", () => {
+  test("home page is open to everyone and indexable", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Know what happened here");
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
-    const robots = await page.request.get("/robots.txt");
-    expect(await robots.text()).toContain("Disallow: /");
-  });
-
-  test("waitlist signup", async ({ page }) => {
-    await page.goto("/");
-    await page.getByLabel("Email address").fill(`e2e-${Date.now()}@example.com`);
-    await page.getByRole("button", { name: "Join the waitlist" }).click();
-    await expect(page.getByRole("status")).toContainText("on the list");
+    await expect(page.getByRole("heading", { name: "What happened here?" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Join the waitlist" })).toHaveCount(0);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /index/);
+    await expect(page.locator('meta[name="robots"]')).not.toHaveAttribute("content", /noindex/);
+    const robots = await (await page.request.get("/robots.txt")).text();
+    expect(robots).toContain("Disallow: /admin");
+    expect(robots).toContain("Sitemap:");
   });
 });
 
@@ -68,15 +64,17 @@ test.describe("app (preview)", () => {
     await expect(page.getByText(/A person will review/)).toBeVisible();
   });
 
-  test("natural deaths are hidden by default and can be shown", async ({ page }) => {
+  test("natural deaths show by default and can be hidden", async ({ page }) => {
     await page.route("**/api/places/suggest**", (r) =>
       r.fulfill({ json: { places: [{ ...DOWNTOWN, label: "Belen spot", lat: 34.6616, lng: -106.7759, city: "Belen", county: "Valencia" }] } }),
     );
     await page.getByRole("combobox").fill("Belen spot");
     await page.getByRole("option").first().click();
-    const hidden = page.getByText(/natural-cause record.*hidden by default/);
+    const hidden = page.getByText(/natural-cause records? hidden/);
+    await expect(hidden).toHaveCount(0);
+    await page.getByRole("button", { name: "Hide", exact: true }).click();
     await expect(hidden).toBeVisible();
-    await page.getByRole("button", { name: "Show" }).click();
+    await page.getByRole("button", { name: "Show", exact: true }).click();
     await expect(hidden).toHaveCount(0);
   });
 
@@ -120,4 +118,15 @@ test.describe("admin review", () => {
     const r = await request.get("/api/admin/queue");
     expect(r.status()).toBe(401);
   });
+});
+
+test("town-level records list for a town badge", async ({ request }) => {
+  const res = await request.get("/api/city?city=Belen&natural=0");
+  expect(res.ok()).toBeTruthy();
+  const j = await res.json();
+  expect(j.items.map((i: { year: number }) => i.year)).toContain(2021); // demo: Belen 2021, town-level
+  expect(j.items.every((i: { precision: string; cause: string }) => i.precision === "city" && i.cause !== "natural")).toBeTruthy();
+  const withNatural = await (await request.get("/api/city?city=Belen&natural=1")).json();
+  expect(withNatural.items.length).toBeGreaterThan(j.items.length);
+  expect((await request.get("/api/city?city=x")).status()).toBe(400);
 });

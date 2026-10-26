@@ -85,3 +85,56 @@ def town_by_name(name: str | None) -> Town | None:
 
 def is_pilot_paper(cities: list[str] | None) -> bool:
     return any((c or "").strip().lower() in PILOT_PAPER_CITIES for c in (cities or []))
+
+
+# ── Statewide ────────────────────────────────────────────────────────────────────────────────
+# Names only (no centroids: the geocoder looks statewide towns up on Photon/OSM). Used by the
+# pre-filter so a death anywhere in New Mexico counts, not just in the three pilot counties.
+# Names that are also everyday words or common surnames (Hope, Golden, Lincoln, Columbus, Roy...)
+# are left out; a "<name> county" mention or the paper's own town still catches those items.
+NM_PLACE_NAMES = [
+    "Santa Fe", "Las Vegas", "East Las Vegas", "Las Cruces", "Mesilla", "Socorro", "Silver City", "Gallup", "Raton",
+    "Roswell", "Carlsbad", "Eddy", "Artesia", "Hobbs", "Lovington", "Clovis", "Portales", "Tucumcari", "Santa Rosa",
+    "Fort Sumner", "Vaughn", "Estancia", "Moriarty", "Mountainair", "Willard", "Clayton", "Springer", "Cimarron",
+    "Wagon Mound", "Mora", "Taos", "Ranchos de Taos", "Questa", "Red River", "Espanola", "Española", "Chama",
+    "Tierra Amarilla", "Abiquiu", "Chimayo", "Chimayó", "Pecos", "Galisteo", "Lamy", "Glorieta", "Cerrillos",
+    "Farmington", "Aztec", "Bloomfield", "Shiprock", "Dulce", "Cuba", "Jemez", "Zuni", "Laguna", "Acoma", "Grants",
+    "Thoreau", "Crownpoint", "Fort Wingate", "Ramah", "Quemado", "Datil", "Magdalena", "Reserve", "Mogollon",
+    "Pinos Altos", "Fort Bayard", "Hurley", "Santa Rita", "Bayard", "Deming", "Lordsburg", "Hachita", "Animas",
+    "Hillsboro", "Kingston", "Lake Valley", "Hot Springs", "Truth or Consequences", "San Marcial", "Hatch",
+    "Alamogordo", "Tularosa", "Cloudcroft", "La Luz", "Ruidoso", "Capitan", "Carrizozo", "White Oaks", "Nogal",
+    "Lincoln county", "Dawson", "Koehler", "Blossburg", "Elizabethtown", "Maxwell City", "Folsom", "Des Moines",
+    "Nara Visa", "Logan", "Texico", "Elida", "Kenna", "Mosquero", "Puerto de Luna", "Anton Chico", "Watrous",
+    "Ocate", "Rociada", "Sapello", "Romeroville", "Gallinas", "Tecolote", "Bernal", "Villanueva", "Encino",
+    "Duran", "Corona", "Torrance", "Tajique", "Manzano", "Punta de Agua", "Chilili", "Cañoncito", "Hagerman",
+    "Dexter", "Lake Arthur", "Loving", "Malaga", "Jal", "Eunice", "Tatum", "Anthony", "Organ", "Dona Ana",
+    "Doña Ana", "Rincon", "Engle", "Cutter", "Cabezon", "San Ysidro", "Zia", "Cochiti", "Santo Domingo",
+    "San Felipe", "Pena Blanca", "Peña Blanca", "Los Alamos", "White Rock", "Velarde", "Embudo", "Dixon", "Penasco",
+    "Peñasco", "Trampas", "Truchas", "Ojo Caliente", "El Rito", "Tres Piedras", "Costilla", "Amalia",
+    "Mora", "Kelly", "Sabinal", "Lemitar", "Polvadera", "San Acacia", "La Joya", "Bernardo", "Cubero", "San Rafael",
+    "Seboyeta", "Cebolleta", "San Mateo", "Fort Stanton", "Picacho", "Lake Valley", "Chloride", "Winston",
+    "Fairview", "Cuchillo", "Monticello", "Gallina", "Coyote", "Youngsville", "Ensenada", "Lumberton", "Monero",
+    "Gallup", "Gibson", "Clarkville", "Allison", "Cimarron", "Van Houten", "Sugarite", "Yankee", "Brilliant",
+]
+
+NM_COUNTIES = [
+    "bernalillo", "catron", "chaves", "cibola", "colfax", "curry", "de baca", "debaca", "dona ana", "doña ana", "eddy", "grant",
+    "guadalupe", "harding", "hidalgo", "lea", "lincoln", "los alamos", "luna", "mckinley", "mora", "otero", "quay",
+    "rio arriba", "roosevelt", "sandoval", "san juan", "san miguel", "santa fe", "sierra", "socorro", "taos",
+    "torrance", "union", "valencia",
+]
+
+_NM_PLACE_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(n) for n in sorted(NM_PLACE_NAMES, key=len, reverse=True)) + r")\b", re.I
+)
+_NM_COUNTY_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(c) for c in NM_COUNTIES) + r")\s+(?:county|co\.)|\bcondado\s+de\s+(?:"
+    + "|".join(re.escape(c) for c in NM_COUNTIES) + r")\b",
+    re.I,
+)
+
+
+def mentions_nm_place(text: str) -> bool:
+    """Any New Mexico town or county (the pilot towns included)."""
+    t = text or ""
+    return mentions_pilot_area(t) or bool(_NM_PLACE_RE.search(t)) or bool(_NM_COUNTY_RE.search(t))

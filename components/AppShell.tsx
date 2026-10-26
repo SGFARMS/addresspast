@@ -227,7 +227,12 @@ export function AppShell({ demo }: { demo: boolean }) {
             }
           }}
           onPick={(lat, lng) => void pick(lat, lng)}
-          onCity={(_city, lat, lng) => setFlyTo({ lat, lng, zoom: 13, key: Date.now() })}
+          onCity={(city, lat, lng) => {
+            // Tap a town badge: zoom in and list that town's records in the results panel.
+            track("town_badge_open");
+            setFlyTo({ lat, lng, zoom: 12.5, key: Date.now() });
+            void runCheck({ label: city, lat, lng, city, county: null, kind: "area" }, { fly: false });
+          }}
         />
 
         {/* Search column: floats on top (phone), left column (desktop) */}
@@ -281,6 +286,7 @@ export function AppShell({ demo }: { demo: boolean }) {
                 error={error}
                 includeNatural={filters.includeNatural}
                 onlyDeaths={filters.recordTypes.length === 1 && filters.recordTypes[0] === "death"}
+                recordTypes={filters.recordTypes}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onToggleNatural={(on) => setFilters((f) => ({ ...f, includeNatural: on, causes: f.causes && on ? [...f.causes, "natural"] : f.causes }))}

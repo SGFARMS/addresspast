@@ -17,7 +17,7 @@ export const siteConfig = {
 
   // ── Launch state ──────────────────────────────────────────────────────
   /** false = waitlist home page, noindex everywhere, robots.txt disallow. */
-  launched: false,
+  launched: true,
   /** Cookie set by /preview?key=PREVIEW_SECRET to bypass the waitlist. */
   previewCookie: "ap_preview",
 
@@ -74,7 +74,7 @@ export const siteConfig = {
     /** Gate summaries + source links behind the paid report. Off during the pilot. */
     paywall: false,
     /** Natural-cause records hidden on the map until the user turns them on. */
-    showNaturalByDefault: false,
+    showNaturalByDefault: true,
     voiceSearch: true,
     askInPlainEnglish: true,
     areaSummaries: true,

@@ -4,6 +4,7 @@ import { demoRepo } from "./demo";
 import { supabaseRepo } from "./supabase";
 import type { Repo } from "./repo";
 import type { AreaStats } from "@/lib/types";
+import { siteConfig } from "@/site.config";
 
 /** Supabase when configured, otherwise the in-memory demo dataset (fake seed records). */
 export function repo(): Repo {
@@ -18,7 +19,7 @@ export function repo(): Repo {
  */
 export async function areaStatsForPage(county: string, city: string | null): Promise<AreaStats> {
   try {
-    return await repo().areaStats(county, city, false);
+    return await repo().areaStats(county, city, siteConfig.features.showNaturalByDefault);
   } catch (e) {
     if (process.env.NEXT_PHASE !== "phase-production-build") throw e;
     console.warn(`[build] area stats for ${city ?? county} unavailable, prerendering empty: ${(e as Error).message}`);
