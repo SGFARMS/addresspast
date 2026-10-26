@@ -119,9 +119,8 @@ def extract(text: str, run, allow_sonnet=lambda: True) -> tuple[list[dict], str]
 
 
 def review_reason(it: dict) -> str | None:
-    kind = it.get("place_kind")
-    if kind in REVIEW_KINDS:
-        return REVIEW_KINDS[kind]
+    # Boarding houses, hotels and businesses used to wait for a person; Joe chose to publish them like
+    # every other record (Oct 26). Their place_kind is still stored and shown on the record.
     if os.environ.get("AP_HOLD_FOR_REVIEW") == "1":
         # Spot-check runs: every record waits in /admin until a person approves it.
         return "spot-check"

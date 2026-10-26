@@ -71,7 +71,7 @@ def test_rows_scrub_review_and_units():
     assert "Smith" not in apt["summary"] and apt["county"] == "Bernalillo" and apt["unit"] == "Apt 3"
     assert apt["cause_category"] == "suicide" and not apt["needs_review"]
     hotel = rows[1]
-    assert hotel["needs_review"] and hotel["review_reason"] == "boarding house or hotel" and hotel["confidence"] == 0.8
+    assert not hotel["needs_review"] and hotel["place_kind"] == "boarding_house_or_hotel" and hotel["confidence"] == 0.8
 
 
 def test_sonnet_escalation_rules():
@@ -135,7 +135,7 @@ def test_spot_check_holds_every_record(monkeypatch):
     ]
     house, hotel = to_rows(page, items)
     assert house["needs_review"] and house["review_reason"] == "spot-check"
-    assert hotel["review_reason"] == "boarding house or hotel"  # the more specific reason wins
+    assert hotel["review_reason"] == "spot-check"  # spot-check holds everything, hotels included
 
 
 def test_tool_choice_fits_the_model():

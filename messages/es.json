@@ -45,7 +45,7 @@
     "searched": "Revisamos {sources, plural, =1 {# fuente} other {# fuentes}} de {from} a {to} para el condado de {county}, al {date}.",
     "searchedGeneric": "Revisamos nuestras fuentes al {date}.",
     "gapNote": "La cobertura de periódicos de 1964 a 2010 es limitada; la falta de registros no significa que no haya pasado nada.",
-    "naturalHidden": "{count, plural, =1 {# registro por causa natural oculto} other {# registros por causa natural ocultos}} por defecto.",
+    "naturalHidden": "{count, plural, =1 {# registro por causa natural oculto} other {# registros por causa natural ocultos}}.",
     "show": "Mostrar",
     "hide": "Ocultar",
     "cityOnly": "{count, plural, =1 {# registro de {city} solo tiene} other {# registros de {city} solo tienen}} la ciudad como ubicación, así que no {count, plural, =1 {lo} other {los}} podemos ubicar en una calle.",

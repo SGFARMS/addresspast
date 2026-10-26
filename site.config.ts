@@ -74,7 +74,7 @@ export const siteConfig = {
     /** Gate summaries + source links behind the paid report. Off during the pilot. */
     paywall: false,
     /** Natural-cause records hidden on the map until the user turns them on. */
-    showNaturalByDefault: false,
+    showNaturalByDefault: true,
     voiceSearch: true,
     askInPlainEnglish: true,
     areaSummaries: true,

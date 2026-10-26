@@ -64,13 +64,15 @@ test.describe("app (preview)", () => {
     await expect(page.getByText(/A person will review/)).toBeVisible();
   });
 
-  test("natural deaths are hidden by default and can be shown", async ({ page }) => {
+  test("natural deaths show by default and can be hidden", async ({ page }) => {
     await page.route("**/api/places/suggest**", (r) =>
       r.fulfill({ json: { places: [{ ...DOWNTOWN, label: "Belen spot", lat: 34.6616, lng: -106.7759, city: "Belen", county: "Valencia" }] } }),
     );
     await page.getByRole("combobox").fill("Belen spot");
     await page.getByRole("option").first().click();
-    const hidden = page.getByText(/natural-cause record.*hidden by default/);
+    const hidden = page.getByText(/natural-cause records? hidden/);
+    await expect(hidden).toHaveCount(0);
+    await page.getByRole("button", { name: "Hide", exact: true }).click();
     await expect(hidden).toBeVisible();
     await page.getByRole("button", { name: "Show", exact: true }).click();
     await expect(hidden).toHaveCount(0);
@@ -119,7 +121,7 @@ test.describe("admin review", () => {
 });
 
 test("town-level records list for a town badge", async ({ request }) => {
-  const res = await request.get("/api/city?city=Belen");
+  const res = await request.get("/api/city?city=Belen&natural=0");
   expect(res.ok()).toBeTruthy();
   const j = await res.json();
   expect(j.items.map((i: { year: number }) => i.year)).toContain(2021); // demo: Belen 2021, town-level

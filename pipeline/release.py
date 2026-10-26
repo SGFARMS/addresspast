@@ -1,6 +1,5 @@
-"""Release the spot-check holds: records that waited in /admin only because of the spot-check
-(review_reason 'spot-check') become normal records, so the nightly step can publish them.
-Boarding houses, hotels and businesses keep waiting for a person, as before.
+"""Release held records: spot-check holds and the old boarding house / hotel / business hold (dropped
+Oct 26) become normal records, so the publish step puts them on the map. Removal disputes are untouched.
 
     python -m pipeline.release
 """
@@ -14,10 +13,11 @@ def main() -> int:
     with PipelineRun("release_spot_check") as run:
         rows = (
             db().table("ap_incidents").update({"needs_review": False, "review_reason": None})
-            .eq("needs_review", True).eq("review_reason", "spot-check").execute().data
+            .eq("needs_review", True)
+            .in_("review_reason", ["spot-check", "boarding house or hotel", "business address"]).execute().data
         ) or []
         run.items_out = len(rows)
-    print(f"released {len(rows)} spot-check records")
+    print(f"released {len(rows)} held records")
     return len(rows)
 
 
