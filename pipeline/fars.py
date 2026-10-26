@@ -136,6 +136,9 @@ def inspect(year: int):
     rows = accident_rows(z)
     print("columns:", rows.fieldnames)
     nm = [r for r in rows if int(_num(r.get("STATE")) or 0) == NM]
+    coord_cols = [c for c in (rows.fieldnames or []) if re.search(r"lat|lon", c, re.I)]
+    print(f"{year} coordinate columns: {coord_cols}; first 5 NM values:",
+          [{c: r.get(c) for c in coord_cols} for r in nm[:5]])
     print(f"{year}: {len(nm)} New Mexico crashes; sample:", {k: nm[0].get(k) for k in list(nm[0])[:40]} if nm else None)
     if nm:
         print("as incident:", to_incident(nm[0], year))

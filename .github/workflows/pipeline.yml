@@ -74,7 +74,8 @@ jobs:
 
       - name: FARS (look at the file layout)
         if: inputs.job == 'fars-inspect'
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-inspect python -m pipeline.fars inspect 2022
+        run: |
+          for y in 2001 2005 2007; do NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-inspect-$y python -m pipeline.fars inspect $y; done
 
       - name: FARS fatal crashes (load, then publish)
         if: steps.db.outputs.ok == 'true' && inputs.job == 'fars'
