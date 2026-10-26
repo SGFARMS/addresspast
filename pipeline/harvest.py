@@ -128,30 +128,30 @@ class Harvester:
     def already_scanned(self, urls: list[str]) -> set[str]:
         if self.args.dry_run or not urls:
             return set()
-        from .common.db import db
+        from .common.db import db, retry
 
         seen: set[str] = set()
         for i in range(0, len(urls), 100):
-            rows = db().table("ap_scanned_pages").select("url").in_("url", urls[i : i + 100]).execute().data
+            rows = retry(lambda: db().table("ap_scanned_pages").select("url").in_("url", urls[i : i + 100]).execute().data)
             seen.update(r["url"] for r in rows)
         return seen
 
     def mark_scanned(self, urls: list[str]):
         if self.args.dry_run or not urls:
             return
-        from .common.db import db
+        from .common.db import db, retry
 
-        db().table("ap_scanned_pages").upsert([{"url": u} for u in urls], ignore_duplicates=True).execute()
+        retry(lambda: db().table("ap_scanned_pages").upsert([{"url": u} for u in urls], ignore_duplicates=True).execute())
 
     def write(self, page: dict, items: list[dict], model: str) -> int:
         rows = to_rows(page, items, model)
         for r in rows:
             r["source_name"] = page.get("source_name")
         if rows and not self.args.dry_run:
-            from .common.db import db
+            from .common.db import db, retry
 
             try:
-                db().table("ap_incidents").upsert(rows, on_conflict="source_url,address_raw", ignore_duplicates=True).execute()
+                retry(lambda: db().table("ap_incidents").upsert(rows, on_conflict="source_url,address_raw", ignore_duplicates=True).execute())
             except Exception as e:  # one bad record must never stop a run: note it and move on
                 self.stats.errors += 1
                 self.stats.first_error = self.stats.first_error or f"write {page.get('url')}: {type(e).__name__}: {str(e)[:250]}"
@@ -410,7 +410,7 @@ class Harvester:
 
 def bulk_batches_done() -> set[str]:
     """Batches earlier bulk runs read to the end."""
-    from .common.db import db
+    from .common.db import db, retry
 
     rows = (
         db().table("ap_pipeline_runs").select("meta").eq("job", "harvest_bulk")
@@ -427,7 +427,7 @@ def last_resume_point():
 
     None = start fresh; a resume dict ({year, offset, city, start_year, end_year, scope}); or
     {"done": True, "scope", "start_year", "end_year"} when that run finished its whole range."""
-    from .common.db import db
+    from .common.db import db, retry
 
     rows = (
         db().table("ap_pipeline_runs").select("meta").eq("job", "harvest_loc")

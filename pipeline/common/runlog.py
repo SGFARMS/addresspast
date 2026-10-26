@@ -38,9 +38,9 @@ class PipelineRun:
         self.status = "ok"
 
     def __enter__(self):
-        from .db import db
+        from .db import db, retry
 
-        row = db().table("ap_pipeline_runs").insert({"job": self.job, "trigger": self.trigger, "meta": self.meta}).execute()
+        row = retry(lambda: db().table("ap_pipeline_runs").insert({"job": self.job, "trigger": self.trigger, "meta": self.meta}).execute())
         self.id = row.data[0]["id"]
         return self
 
@@ -57,10 +57,10 @@ class PipelineRun:
         return c
 
     def ai(self, feature: str, model: str, usage, batched: bool = False):
-        from .db import db
+        from .db import db, retry
 
         c = self._account(model, usage, batched)
-        db().table("ap_ai_usage").insert({
+        row = {
             "feature": feature,
             "model": model,
             "input_tokens": getattr(usage, "input_tokens", 0) or 0,
@@ -70,13 +70,17 @@ class PipelineRun:
             "batched": batched,
             "cost_usd": round(c, 5),
             "run_id": self.id,
-        }).execute()
+        }
+        try:
+            retry(lambda: db().table("ap_ai_usage").insert(row).execute())
+        except Exception as e:  # the call already happened and is counted in this run; don't redo it over a log row
+            print(f"  could not log AI usage ({type(e).__name__}); counted in this run only", flush=True)
         if self.cost > self.max_cost:
             self.status = "partial"
             raise BudgetExceeded(f"{self.job} passed ${self.max_cost:.2f}; stopping early")
 
     def __exit__(self, exc_type, exc, tb):
-        from .db import db
+        from .db import db, retry
 
         err = None
         if exc_type is BudgetExceeded:
@@ -85,7 +89,7 @@ class PipelineRun:
         elif exc_type is not None:
             self.status = "error"
             err = "".join(traceback.format_exception(exc_type, exc, tb))[-4000:]
-        db().table("ap_pipeline_runs").update({
+        retry(lambda: db().table("ap_pipeline_runs").update({
             "status": self.status,
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "items_in": self.items_in,
@@ -96,7 +100,7 @@ class PipelineRun:
             "batch_id": self.batch_id,
             "error": err,
             "meta": self.meta,
-        }).eq("id", self.id).execute()
+        }).eq("id", self.id).execute())
         return exc_type is BudgetExceeded  # swallow budget stops, re-raise real errors
 
 
