@@ -76,10 +76,9 @@ def _rows(path: str):
 
 
 @lru_cache(maxsize=1)
-def index() -> dict[str, list[tuple[int, str, str, float, float]]]:
-    """normalized name -> [(class rank, name, county, lat, lng)] for every New Mexico place a death can be at."""
-    out: dict[str, list[tuple[int, str, str, float, float]]] = {}
-    seen: set[str] = set()
+def _features() -> list[dict]:
+    """Every New Mexico GNIS point with coordinates (both files, de-duplicated by feature id)."""
+    out, seen = [], set()
     for path in FILES:
         try:
             rows = list(_rows(path))
@@ -89,9 +88,8 @@ def index() -> dict[str, list[tuple[int, str, str, float, float]]]:
         for row in rows:
             if (row.get("state_alpha") or "NM") != "NM" and (row.get("state_name") or "New Mexico") != "New Mexico":
                 continue
-            rank = CLASS_RANK.get((row.get("feature_class") or "").lower())
             fid = row.get("feature_id") or ""
-            if rank is None or fid in seen:
+            if fid in seen:
                 continue
             try:
                 lat, lng = float(row.get("prim_lat_dec") or 0), float(row.get("prim_long_dec") or 0)
@@ -100,10 +98,72 @@ def index() -> dict[str, list[tuple[int, str, str, float, float]]]:
             if not (31.3 <= lat <= 37.1 and -109.1 <= lng <= -103.0):
                 continue  # 0/0 = "unknown" in GNIS
             seen.add(fid)
-            name = re.sub(r"\s*\((historical|historic)\)", "", row.get("feature_name") or "").strip()
-            out.setdefault(_norm(name), []).append((rank, name, row.get("county_name") or "", lat, lng))
+            out.append({"name": re.sub(r"\s*\((historical|historic)\)", "", row.get("feature_name") or "").strip(),
+                        "cls": (row.get("feature_class") or "").lower(), "county": row.get("county_name") or "",
+                        "lat": lat, "lng": lng})
+    return out
+
+
+@lru_cache(maxsize=1)
+def index() -> dict[str, list[tuple[int, str, str, float, float]]]:
+    """normalized name -> [(class rank, name, county, lat, lng)] for every New Mexico place a death can be at."""
+    out: dict[str, list[tuple[int, str, str, float, float]]] = {}
+    for f in _features():
+        rank = CLASS_RANK.get(f["cls"])
+        if rank is not None:
+            out.setdefault(_norm(f["name"]), []).append((rank, f["name"], f["county"], f["lat"], f["lng"]))
     print(f"gnis: {sum(len(v) for v in out.values())} New Mexico places loaded", flush=True)
     return out
+
+
+# ── Landmarks: "the Dawson mine No. 2", "Fairview cemetery", "the San Felipe hotel" ─────────────
+# Point features a death can be at. Rivers, valleys, ranges and the like are left out: their GNIS point
+# is one arbitrary spot along something miles long.
+LANDMARK_CLASSES = {"mine", "building", "church", "school", "cemetery", "hospital", "locale", "post office",
+                    "military", "dam", "bridge", "tunnel", "crossing", "park", "spring", "well", "airport",
+                    "tower", "populated place", "trail", "falls", "gap", "arch", "pillar", "cave", "crater", "summit"}
+# Words that say what kind of place it is, not which one ("mine", "hotel"): never enough on their own.
+_GENERIC = {"mine", "mines", "shaft", "pit", "camp", "ranch", "school", "church", "cemetery", "hospital", "hotel",
+            "house", "building", "depot", "station", "spring", "springs", "well", "dam", "bridge", "tunnel", "mill",
+            "store", "saloon", "number", "no", "the", "of", "at", "near", "old", "new", "north", "south", "east", "west",
+            "lower", "upper", "big", "little", "county", "canyon", "cañon", "canon", "arroyo", "mesa", "hill", "peak",
+            "park", "school", "san", "santa", "de", "la", "el", "los", "las", "del", "and", "company", "co", "coal"}
+
+
+@lru_cache(maxsize=1)
+def _landmarks() -> list[tuple[frozenset, dict]]:
+    out = []
+    for f in _features():
+        if f["cls"] in LANDMARK_CLASSES:
+            words = frozenset(w for w in _norm(f["name"]).split() if w not in _GENERIC and len(w) > 1)
+            if words:
+                out.append((words, f))
+    return out
+
+
+def landmark_near(text: str | None, lat: float, lng: float, max_km: float = 15.0) -> dict | None:
+    """The GNIS feature near (lat, lng) whose distinctive name words all appear in the text, e.g.
+    "killed in the Gallup American Coal company's mine" -> nothing ("gallup" alone is the town);
+    "an explosion at Dawson mine No. 2" -> Dawson (mine). Ties: more words matched, then nearest."""
+    words = set(_norm(text or "").split())
+    if not words:
+        return None
+    best, best_key = None, None
+    for need, f in _landmarks():
+        if not need <= words:
+            continue
+        d = math.hypot((f["lat"] - lat) * 111, (f["lng"] - lng) * 111 * math.cos(math.radians(lat)))
+        if d > max_km:
+            continue
+        # The feature's kind should show up in the text too when it has one ("Fairview" alone could be
+        # the town; "Fairview cemetery" is the cemetery)
+        kind_words = set(_norm(f["name"]).split()) & _GENERIC
+        if kind_words and not (kind_words & words):
+            continue
+        key = (-len(need), d)
+        if best_key is None or key < best_key:
+            best, best_key = f, key
+    return best
 
 
 def _km(a, b) -> float:

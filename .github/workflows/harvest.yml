@@ -120,6 +120,9 @@ jobs:
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 100
           # Records no town was found for before the USGS place names (ghost towns) went in
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode-retry python -m pipeline.geocode --retry-failed --max-minutes 20
+          # Records left at their town although the article gives a street, corner or landmark: historic street
+          # pins, USGS landmarks (mines, cemeteries, schools...) and OpenStreetMap street corners
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode-refine python -m pipeline.geocode --refine --max-minutes 60
 
       - name: Publish new records
         # Put this run's finds on the map now instead of waiting for the nightly job.
@@ -129,7 +132,7 @@ jobs:
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 6000 --max-minutes 50
           # Then keep merging repeat articles already on the map (resumes where the last sweep stopped; the time
           # left after reading, placing and publishing, which is most of a run now that the archive is read)
-          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 200 || true
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 150 || true
           # List stored records that turn out not to be a death (hidden only by the pipeline job quality-apply)
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality || true
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats

@@ -95,8 +95,10 @@ def test_geocode_rules(monkeypatch):
                                                  "properties": {"name": "KiMo Theatre", "type": "house"}})
     modern = g.geocode_row({"address_raw": "412 N. Fifth St.", "city": "Albuquerque", "location_precision": "street_address", "incident_year": 1998})
     assert modern["geocode_precision"] == "street" and modern["geocode_status"] == "ok"
+    monkeypatch.setattr(g, "_gnis_landmark", lambda addr, town: None)
     old = g.geocode_row({"address_raw": "412 N. Fifth St.", "city": "Albuquerque", "location_precision": "street_address", "incident_year": 1912})
-    assert old["geocode_precision"] == "city" and old["geocode_status"] == "fallback" and "census candidate" in old["matched_address"]
+    # Right street, house numbers may have changed: an approximate "historic street" pin, never "at this address"
+    assert old["geocode_precision"] == "street_historic" and old["geocode_status"] == "ok" and "1912" in old["matched_address"]
     lm = g.geocode_row({"address_raw": "KiMo Theater", "city": "Albuquerque", "location_precision": "landmark", "incident_year": 1951})
     assert lm["geocode_precision"] == "landmark"
     wrong = g.geocode_row({"address_raw": "Alvarado Hotel", "city": "Albuquerque", "location_precision": "landmark", "incident_year": 1920})
@@ -295,3 +297,31 @@ def test_dedupe_far_apart_rule_and_dying():
     assert rule_verdict(a, b) is False                           # six months apart, different stories
     assert not not_a_death("A suicide attempt by cutting was reported; the man was not expected to survive.")
     assert not not_a_death("A man who swallowed poison was described as dying after a suicide attempt.")
+
+
+def test_street_corners_and_renames():
+    from pipeline import geocode as g
+
+    assert g._split_corner("corner of North Fourth street and Gold avenue", "Albuquerque") == ("4th", "gold")
+    assert g._split_corner("Railroad avenue and First street", "Albuquerque") == ("central", "1st")
+    assert g._split_corner("Main street", "Belen") is None
+    assert g.modern_street_names("212 W. Railroad Ave.", "Albuquerque") == "212 W. Central Avenue"
+    assert g.modern_street_names("212 W. Railroad Ave.", "Belen") == "212 W. Railroad Ave."
+
+
+def test_gnis_landmarks(monkeypatch):
+    from pipeline import gnis
+
+    feats = [
+        {"name": "Dawson Mine", "cls": "mine", "county": "Colfax", "lat": 36.67, "lng": -104.78},
+        {"name": "Fairview Cemetery", "cls": "cemetery", "county": "Bernalillo", "lat": 35.07, "lng": -106.62},
+        {"name": "Fairview", "cls": "populated place", "county": "Rio Arriba", "lat": 36.0, "lng": -106.07},
+        {"name": "Stag Canon Mine", "cls": "mine", "county": "Colfax", "lat": 36.66, "lng": -104.77},
+    ]
+    monkeypatch.setattr(gnis, "_features", lambda: feats)
+    gnis._landmarks.cache_clear()
+    assert gnis.landmark_near("an explosion in the Dawson mine No. 2", 36.66, -104.77)["name"] == "Dawson Mine"
+    assert gnis.landmark_near("buried in Fairview cemetery", 35.08, -106.65)["name"] == "Fairview Cemetery"
+    assert gnis.landmark_near("Dawson mine", 35.08, -106.65) is None          # 200 km from the town
+    assert gnis.landmark_near("a mine near town", 36.66, -104.77) is None     # generic words only
+    gnis._landmarks.cache_clear()
