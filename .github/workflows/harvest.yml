@@ -112,18 +112,18 @@ jobs:
       - name: Harvest
         if: steps.cfg.outputs.skip != 'true'
         # Stops cleanly before the job's 345-minute timeout so the summary and files are always written.
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest ${{ steps.cfg.outputs.args }} --max-minutes 285 --out harvest-out
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest ${{ steps.cfg.outputs.args }} --max-minutes 200 --out harvest-out
 
       - name: Geocode new records
         if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 20
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 60
 
       - name: Publish new records
         # Put this run's finds on the map now instead of waiting for the nightly job.
         if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
         run: |
           set -e
-          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 2000 --max-minutes 25
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 4000 --max-minutes 60
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
 
       - uses: actions/upload-artifact@v5
