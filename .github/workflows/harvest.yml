@@ -116,7 +116,10 @@ jobs:
 
       - name: Geocode new records
         if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 60
+        run: |
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 45
+          # Records no town was found for before the USGS place names (ghost towns) went in
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode-retry python -m pipeline.geocode --retry-failed --max-minutes 20
 
       - name: Publish new records
         # Put this run's finds on the map now instead of waiting for the nightly job.

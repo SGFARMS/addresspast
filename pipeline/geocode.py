@@ -30,6 +30,8 @@ NM_BBOX = (-109.06, 31.33, -103.0, 37.0)
 USER_AGENT = "AddressPast-geocoder/1.0 (+https://history.skyhighwebsites.dev)"
 HISTORIC_BEFORE = 1960
 MAX_KM_FROM_TOWN = {"street": 25.0, "landmark": 15.0}
+# Every geocode run after this moment looks up USGS names (GNIS); --retry-failed re-tries failures from before it.
+GNIS_SINCE = "2026-10-27T08:00:00Z"
 
 _session = requests.Session()
 _session.headers["User-Agent"] = USER_AGENT
@@ -299,8 +301,8 @@ def _select(retry_failed: bool, recheck_towns: bool, after_id: int, page: int):
         # Re-place every town-level record with the current rules (fixes earlier wrong statewide matches).
         q = q.or_("geocode_status.is.null,geocode_status.eq.failed,geocode_precision.eq.city")
     elif retry_failed:
-        # Records that found no town before (e.g. outside the old three-county list)
-        q = q.or_("geocode_status.is.null,geocode_status.eq.failed")
+        # Records that found no town before the USGS names (GNIS) went in; ones that failed since already had them.
+        q = q.or_(f"geocode_status.is.null,and(geocode_status.eq.failed,geocoded_at.lt.{GNIS_SINCE})")
     else:
         q = q.is_("geocode_status", "null")
     return q.eq("hidden", False).gt("id", after_id).order("id").limit(page).execute().data or []
