@@ -9,7 +9,7 @@ export const revalidate = 3600;
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "area" });
-  return { title: t("counties") };
+  return { title: t("counties"), alternates: { canonical: locale === "en" ? "/nm" : "/es/nm" } };
 }
 
 export default async function AreasIndex({ params }: { params: Promise<{ locale: string }> }) {
