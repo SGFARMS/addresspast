@@ -1,0 +1,20 @@
+name: ci-pipeline
+
+# Python pipeline tests, only when the pipeline changes.
+on:
+  push:
+    branches: [main]
+    paths: ["pipeline/**", ".github/workflows/ci-pipeline.yml"]
+  pull_request:
+    paths: ["pipeline/**", ".github/workflows/ci-pipeline.yml"]
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install pytest requests
+      - run: .github/scripts/run.sh pytest python -m pytest pipeline/tests -q

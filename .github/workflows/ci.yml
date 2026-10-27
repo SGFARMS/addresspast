@@ -1,9 +1,13 @@
 name: ci
 
+# Site checks. Changes that only touch the Python pipeline or workflows skip this (saves Actions minutes);
+# those are tested by ci-pipeline.yml.
 on:
   push:
     branches: [main]
+    paths-ignore: ["pipeline/**", ".github/workflows/harvest.yml", ".github/workflows/pipeline.yml", ".github/workflows/bulk.yml", "*.md"]
   pull_request:
+    paths-ignore: ["pipeline/**", ".github/workflows/harvest.yml", ".github/workflows/pipeline.yml", ".github/workflows/bulk.yml", "*.md"]
 
 jobs:
   web:
@@ -20,13 +24,3 @@ jobs:
       - run: .github/scripts/run.sh build npm run build
       - run: npx playwright install --with-deps chromium
       - run: .github/scripts/run.sh e2e npm run e2e
-
-  pipeline:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install pytest requests
-      - run: .github/scripts/run.sh pytest python -m pytest pipeline/tests -q
