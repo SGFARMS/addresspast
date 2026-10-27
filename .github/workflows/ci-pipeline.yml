@@ -8,9 +8,14 @@ on:
   pull_request:
     paths: ["pipeline/**", ".github/workflows/ci-pipeline.yml"]
 
+concurrency:
+  group: ci-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
