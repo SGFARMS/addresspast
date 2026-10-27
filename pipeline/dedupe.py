@@ -201,11 +201,38 @@ def check_incident(run, r: dict) -> int:
                 continue  # no usable answer: leave the pair unchecked so a later run asks again
             same, why, model = bool(d["same_event"]), d.get("rationale") or "", MODEL_DEDUPE
         _record(r["id"], other["id"], same, why, model)
-        if same and other.get("event_id") and other["event_id"] != r.get("event_id"):
-            merge(other["event_id"], r["event_id"])
-            r["event_id"] = other["event_id"]
-            merged += 1
+        if same:
+            kept = merge_incidents(other["id"], r["id"])
+            if kept:
+                r["event_id"] = kept
+                merged += 1
     return merged
+
+
+def merge_incidents(keep_id: int, drop_id: int) -> str | None:
+    """Merge the events of two records, reading their current events first: earlier merges in the same run
+    may have moved either record (a stale event id once broke a run with a foreign-key error, Oct 27)."""
+    cur = {x["id"]: x.get("event_id") for x in (retry(lambda: db().table("ap_incidents").select("id,event_id")
+                                                    .in_("id", [keep_id, drop_id]).execute().data) or [])}
+    keep, drop = cur.get(keep_id), cur.get(drop_id)
+    if not keep or not drop or keep == drop:
+        return None
+    alive = {x["id"] for x in (retry(lambda: db().table("ap_events").select("id").in_("id", [keep, drop]).execute().data) or [])}
+    if keep not in alive:
+        keep, drop = drop, keep
+    if keep not in alive:
+        return None
+    merge(keep, drop)
+    return keep
+
+
+def check_incident_safe(run, r: dict) -> int:
+    """One record that fails (a dropped connection after the retries, a race) never stops the run."""
+    try:
+        return check_incident(run, r)
+    except Exception as e:
+        print(f"  record {r.get('id')}: duplicate check skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+        return 0
 
 
 def _sweep_start() -> int:
@@ -229,7 +256,7 @@ def sweep(max_minutes: float):
                 last = 0  # start over next time
                 break
             for r in rows:
-                merges += check_incident(run, r)
+                merges += check_incident_safe(run, r)
                 checked += 1
                 last = r["id"]
                 if (time.monotonic() - t0) / 60 >= max_minutes:
@@ -251,7 +278,7 @@ def main(limit: int, max_minutes: float = 40):
             if (time.monotonic() - t0) / 60 >= max_minutes * 1.5:
                 print("  dedupe: time limit, the rest waits for the sweep", flush=True)
                 break
-            run.items_out += check_incident(run, r)
+            run.items_out += check_incident_safe(run, r)
         retry(lambda: db().rpc("ap_refresh_area_coverage", {}).execute())
 
 
