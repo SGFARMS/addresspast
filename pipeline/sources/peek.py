@@ -194,5 +194,45 @@ def ntsb():
         os.remove(path)
 
 
+WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+WIKIDATA_NM = """
+SELECT ?e ?eLabel ?typeLabel ?deaths ?when ?coord WHERE {
+  ?e wdt:P1120 ?deaths .
+  FILTER(?deaths > 0)
+  { ?e wdt:P131+ wd:Q1522 } UNION { ?e wdt:P276/wdt:P131* wd:Q1522 } UNION { ?e wdt:P276 wd:Q1522 }
+  OPTIONAL { ?e wdt:P625 ?coord }
+  OPTIONAL { ?e wdt:P585 ?when }
+  OPTIONAL { ?e wdt:P31 ?type }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+"""
+
+
+def wikidata():
+    """Wikidata (CC0): New Mexico events with a death count."""
+    r = requests.get(WIKIDATA_SPARQL, params={"query": WIKIDATA_NM, "format": "json"}, headers=UA, timeout=180)
+    rows = r.json()["results"]["bindings"]
+    ev = {}
+    for b in rows:
+        ev.setdefault(b["e"]["value"], b)
+    print(f"Wikidata: {r.status_code}, {len(rows)} rows, {len(ev)} events, {sum(1 for b in ev.values() if 'coord' in b)} with coordinates")
+    for b in list(ev.values())[:40]:
+        print("  ", b.get("eLabel", {}).get("value"), "|", b.get("typeLabel", {}).get("value"), "|", b["deaths"]["value"],
+              "|", b.get("when", {}).get("value", "")[:10], "|", b.get("coord", {}).get("value", ""))
+
+
+def abq():
+    """City of Albuquerque open data: which datasets mention crime/homicide/death."""
+    for q in ("homicide", "crime incidents", "fatal"):
+        r = requests.get("https://opendata.cabq.gov/api/3/action/package_search", params={"q": q, "rows": 8}, headers=UA, timeout=60)
+        try:
+            res = r.json()["result"]["results"]
+        except Exception:
+            print(q, r.status_code, r.text[:200])
+            continue
+        for d in res:
+            print(f"{q}: {d.get('name')} | {d.get('title')} | {[x.get('url') for x in d.get('resources', [])][:2]}")
+
+
 if __name__ == "__main__":
-    {"fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
+    {"wikidata": wikidata, "abq": abq, "fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
