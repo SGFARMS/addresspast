@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import math
 import re
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -33,6 +34,8 @@ HISTORIC_BEFORE = 1960
 MAX_KM_FROM_TOWN = {"street": 25.0, "landmark": 15.0}
 # Every geocode run after this moment looks up USGS names (GNIS); --retry-failed re-tries failures from before it.
 GNIS_SINCE = "2026-10-27T08:00:00Z"
+# Records left at their town before the street / landmark / corner rules (Oct 27) get one --refine pass.
+REFINE_SINCE = "2026-10-27T14:00:00Z"
 
 _session = requests.Session()
 _session.headers["User-Agent"] = USER_AGENT
@@ -41,11 +44,16 @@ _last_call = {"census": 0.0, "photon": 0.0, "overpass": 0.0}
 _MIN_GAP = {"census": 0.4, "photon": 1.0, "overpass": 2.0}
 
 
+_pace_lock = threading.Lock()
+
+
 def _pace(name: str):
-    gap = time.monotonic() - _last_call[name]
-    if gap < _MIN_GAP[name]:
-        time.sleep(_MIN_GAP[name] - gap)
-    _last_call[name] = time.monotonic()
+    """Keep each service's minimum gap between calls, also across worker threads."""
+    with _pace_lock:
+        wait = _MIN_GAP[name] - (time.monotonic() - _last_call[name])
+        _last_call[name] = time.monotonic() + max(0.0, wait)
+    if wait > 0:
+        time.sleep(wait)
 
 
 def km(lat1, lng1, lat2, lng2) -> float:
@@ -403,8 +411,8 @@ def _select(retry_failed: bool, recheck_towns: bool, after_id: int, page: int, r
         q = q.or_("geocode_status.is.null,geocode_status.eq.failed,geocode_precision.eq.city")
     elif refine:
         # Records left at the town although their text has a street, corner or landmark: try again with
-        # today's rules (historic street pins, USGS landmarks, street corners).
-        q = q.eq("geocode_status", "fallback")
+        # today's rules (historic street pins, USGS landmarks, street corners) once.
+        q = q.eq("geocode_status", "fallback").lt("geocoded_at", REFINE_SINCE)
     elif retry_failed:
         # Records that found no town before the USGS names (GNIS) went in; ones that failed since already had them.
         q = q.or_(f"geocode_status.is.null,and(geocode_status.eq.failed,geocoded_at.lt.{GNIS_SINCE})")
@@ -425,13 +433,17 @@ def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False, ma
     t0 = time.monotonic()
     with PipelineRun("geocode") as run:
         while done < limit and (time.monotonic() - t0) / 60 < max_minutes:
-            rows = retry(lambda: _select(retry_failed, recheck_towns, last_id, min(1000, limit - done), refine))
+            rows = retry(lambda: _select(retry_failed, recheck_towns, last_id, min(200, limit - done), refine))
             if not rows:
                 break
-            for r in rows:
-                last_id = r["id"]
-                run.items_in += 1
+            last_id = rows[-1]["id"]
+
+            def place(r):
                 upd = geocode_row(r, recheck=recheck_towns)
+                if refine and upd["geocode_status"] == "fallback" and upd.get("geocode_precision") == "city":
+                    # Nothing more precise found: just note the try, the pin stays where it was.
+                    retry(lambda: db().table("ap_incidents").update({"geocoded_at": upd["geocoded_at"]}).eq("id", r["id"]).execute())
+                    return upd
                 retry(lambda: db().table("ap_incidents").update(upd).eq("id", r["id"]).execute())
                 if r.get("event_id"):
                     if upd["geocode_status"] == "failed":
@@ -440,12 +452,28 @@ def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False, ma
                         retry(lambda: db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute())
                     # Move (or remove) the event to match.
                     retry(lambda: db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute())
-                k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
-                counts[k] = counts.get(k, 0) + 1
-                run.items_out += 1 if upd["geocode_status"] == "ok" else 0
-                done += 1
-                if (time.monotonic() - t0) / 60 >= max_minutes:
-                    break
+                return upd
+
+            def safe(r):
+                try:
+                    return place(r)
+                except Exception as e:  # one record never stops the run; it is tried again next time
+                    print(f"  record {r.get('id')}: skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+                    return None
+
+            # Lookups are mostly waiting on the Census / Photon / Overpass; 3 at a time (each service keeps
+            # its own minimum gap between calls).
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                for upd in pool.map(safe, rows):
+                    run.items_in += 1
+                    done += 1
+                    if upd is None:
+                        continue
+                    k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
+                    counts[k] = counts.get(k, 0) + 1
+                    run.items_out += 1 if upd["geocode_status"] == "ok" else 0
         run.meta = {"counts": counts}
     print("geocoded", done, counts)
 
