@@ -130,7 +130,9 @@ jobs:
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
 
       - uses: actions/upload-artifact@v5
-        if: always() && steps.cfg.outputs.skip != 'true'
+        # Dry runs only: a live run's records go to the database, and artifacts on a public repo can be
+        # downloaded by anyone signed in to GitHub.
+        if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode != 'live'
         with:
           name: harvest-out
           path: harvest-out/

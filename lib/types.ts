@@ -51,6 +51,9 @@ export interface CheckItem {
   buildingLevel: boolean;
   /** The record is older than the building now on the lot. */
   predatesBuilding: boolean;
+  /** One-line neutral description ("A fatal mining accident at a surface mine was recorded."), name-scrubbed.
+   *  Only filled in while features.paywall is off (lib/data/previews.ts). */
+  summary?: string | null;
 }
 
 export interface Coverage {

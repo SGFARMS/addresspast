@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { repo } from "@/lib/data";
+import { withPreviews } from "@/lib/data/previews";
 import { filtersFromQuery, mapQuerySchema } from "@/lib/filters";
 import { clientIp, rateLimit, tooMany } from "@/lib/rate-limit";
 
@@ -17,7 +18,8 @@ export async function GET(req: Request) {
   // filtersFromQuery only reads the filter fields, so the missing bbox is fine
   const f = filtersFromQuery({ ...parsed.data, bbox: [0, 0, 0, 0] });
   try {
-    const items = await repo().cityEvents(parsed.data.city, f);
+    const locale = new URL(req.url).searchParams.get("locale") === "es" ? "es" : "en";
+    const items = await withPreviews(await repo().cityEvents(parsed.data.city, f), locale);
     return Response.json({ city: parsed.data.city, items }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
   } catch (e) {
     console.error("[city]", e);

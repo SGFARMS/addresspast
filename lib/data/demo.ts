@@ -119,6 +119,12 @@ export const demoRepo: Repo = {
     }));
   },
 
+  async eventSummaries(ids, locale) {
+    const out: Record<string, string> = {};
+    for (const e of events) if (ids.includes(e.id)) out[e.id] = locale === "es" ? e.summaryEs : e.summary;
+    return out;
+  },
+
   async eventDetail(id, full, locale) {
     const e = events.find((x) => x.id === id);
     if (!e) return null;

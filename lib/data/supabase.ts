@@ -160,6 +160,23 @@ export const supabaseRepo: Repo = {
     }));
   },
 
+  async eventSummaries(ids, locale) {
+    const out: Record<string, string> = {};
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await serviceClient()
+        .from("ap_events")
+        .select("id,summary,summary_es")
+        .in("id", ids.slice(i, i + 200))
+        .eq("hidden", false);
+      if (error) throw new Error(`eventSummaries: ${error.message}`);
+      for (const x of (data ?? []) as { id: string; summary: string | null; summary_es: string | null }[]) {
+        const s = locale === "es" ? x.summary_es || x.summary : x.summary;
+        if (s) out[x.id] = s;
+      }
+    }
+    return out;
+  },
+
   async eventDetail(id, full, locale) {
     const d = await rpc<any>("ap_api_event_detail", { p_event_id: id, p_full: full, p_locale: locale });
     if (!d) return null;

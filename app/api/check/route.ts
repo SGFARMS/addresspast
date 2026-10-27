@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { repo } from "@/lib/data";
+import { withPreviews } from "@/lib/data/previews";
 import { isInNM } from "@/lib/geo";
 import { clientIp, rateLimit, tooMany } from "@/lib/rate-limit";
 import { siteConfig } from "@/site.config";
@@ -9,10 +10,12 @@ const body = z.object({
   lat: z.number(),
   lng: z.number(),
   city: z.string().max(80).nullable().optional(),
+  locale: z.enum(["en", "es"]).optional(),
   types: z.array(z.enum(RECORD_TYPES as [string, ...string[]])).optional(),
 });
 
-/** The free check: counts + year/category/precision only. Summaries and links come from /api/events/[id]. */
+/** The free check: counts + year/category/precision, plus a one-line description per record while the
+ *  paywall is off (lib/data/previews.ts). Source links come from /api/events/[id]. */
 export async function POST(req: Request) {
   const rl = await rateLimit("check", clientIp(req));
   if (!rl.ok) return tooMany(rl.retryAfter);
@@ -28,6 +31,9 @@ export async function POST(req: Request) {
       nearM: siteConfig.check.nearbyRadiusM,
       recordTypes: types?.length ? types : ["death"],
     });
+    const locale = parsed.data.locale ?? "en";
+    result.atAddress = await withPreviews(result.atAddress, locale);
+    result.nearby = await withPreviews(result.nearby, locale);
     return Response.json(result, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
     console.error("[check]", e);

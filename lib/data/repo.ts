@@ -27,6 +27,8 @@ export interface Repo {
   /** Records placed only at town level ("Gallup, 1912"), newest last. Up to 500. */
   cityEvents(city: string, f: MapFilters): Promise<CheckItem[]>;
   eventDetail(id: string, full: boolean, locale: string): Promise<EventDetail | null>;
+  /** One-line summaries for list previews, by event id (Spanish when available for locale "es"). */
+  eventSummaries(ids: string[], locale: string): Promise<Record<string, string>>;
   areaStats(county: string, city: string | null, includeNatural: boolean): Promise<AreaStats>;
   /** Fast lane: family/owner/tenant requests on records from the last 10 years hide the record at once. */
   requestRemoval(r: RemovalRequest): Promise<{ ok: boolean; fastLane: boolean }>;

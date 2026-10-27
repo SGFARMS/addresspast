@@ -87,7 +87,7 @@ export function AppShell({ demo }: { demo: boolean }) {
         const res = await fetch("/api/check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lat: p.lat, lng: p.lng, city: p.city, types: filters.recordTypes }),
+          body: JSON.stringify({ lat: p.lat, lng: p.lng, city: p.city, types: filters.recordTypes, locale: locale === "es" ? "es" : "en" }),
         });
         const json = await res.json();
         if (req !== checkReq.current) return;

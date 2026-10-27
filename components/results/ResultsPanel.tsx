@@ -144,6 +144,7 @@ function TownRecords({ city, autoOpen, includeNatural, recordTypes, onSelect }: 
   city: string; autoOpen: boolean; includeNatural: boolean; recordTypes: string[]; onSelect: (id: string) => void;
 }) {
   const t = useTranslations("check");
+  const locale = useLocale();
   const [open, setOpen] = useState(autoOpen);
   const [items, setItems] = useState<CheckItem[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -154,14 +155,14 @@ function TownRecords({ city, autoOpen, includeNatural, recordTypes, onSelect }: 
     const ctrl = new AbortController();
     setItems(null);
     setFailed(false);
-    const qs = new URLSearchParams({ city, natural: includeNatural ? "1" : "0", types: recordTypes.join(",") });
+    const qs = new URLSearchParams({ city, natural: includeNatural ? "1" : "0", types: recordTypes.join(","), locale });
     fetch(`/api/city?${qs}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((j: { items: CheckItem[] }) => setItems(j.items))
       .catch((e: Error) => { if (e.name !== "AbortError") setFailed(true); });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, key]);
+  }, [open, key, locale]);
 
   if (!open) {
     return (
@@ -199,6 +200,7 @@ function RecordList({ title, items, onSelect, showDistance }: { title: string; i
                   <span className="text-ink-2">{l.category(i.recordType, i.cause)}</span>
                   {i.recordType === "death" && <span className="sr-only">{l.type(i.recordType)}</span>}
                 </span>
+                {i.summary && <span className="mt-1 line-clamp-2 block text-sm leading-snug text-ink-2">{i.summary}</span>}
                 <span className="mt-1.5 flex flex-wrap items-center gap-2">
                   <PrecisionBadge precision={i.precision} />
                   {i.verified && <VerifiedBadge />}
