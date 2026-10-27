@@ -5,6 +5,9 @@
 # Results: the run summary, plus the "harvest-out" artifact (records.csv, stats.json, ...).
 # Backlog autopilot: while pipeline/BACKFILL_ON exists, a live bulk-OCR run starts every 6 hours and reads
 # the New Mexico batches it hasn't finished yet (whole batches of newspaper text, no search API).
+# The schedule is also gated at the job level by the repo variable HARVEST_BACKFILL: until it is
+# "true", a scheduled run is skipped before a runner starts (0 billed Actions minutes). Autopilot
+# on = add pipeline/BACKFILL_ON *and* set HARVEST_BACKFILL to true. Manual runs are never gated.
 name: harvest
 
 on:
@@ -62,6 +65,8 @@ concurrency:
 
 jobs:
   harvest:
+    # Job-level gate: skipped scheduled runs never start a runner (0 billed minutes).
+    if: github.event_name != 'schedule' || vars.HARVEST_BACKFILL == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 345
     env:

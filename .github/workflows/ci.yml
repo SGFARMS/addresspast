@@ -9,9 +9,15 @@ on:
   pull_request:
     paths-ignore: ["pipeline/**", ".github/workflows/harvest.yml", ".github/workflows/pipeline.yml", ".github/workflows/bulk.yml", "*.md"]
 
+# A newer push to the same branch or PR cancels the older, now-obsolete run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
