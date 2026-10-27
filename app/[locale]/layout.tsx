@@ -26,6 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
     alternates: { canonical: locale === "en" ? "/" : `/${locale}`, languages: { en: "/", es: "/es" } },
     robots: siteConfig.launched ? { index: true, follow: true } : { index: false, follow: false, nocache: true },
     openGraph: { siteName: siteConfig.name, title: t("title"), description: t("description"), locale, type: "website" },
+    twitter: { card: "summary_large_image" },
     manifest: "/manifest.webmanifest",
   };
 }
@@ -47,12 +48,29 @@ export default async function LocaleLayout({ children, params }: { children: Rea
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
   setRequestLocale(locale);
+  const meta = await getTranslations({ locale, namespace: "meta" });
+  // Structured data for search engines (schema.org WebApplication).
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: siteConfig.name,
+    url: siteConfig.url,
+    description: meta("description"),
+    applicationCategory: "ReferenceApplication",
+    operatingSystem: "Web",
+    inLanguage: locale,
+    areaServed: { "@type": "State", name: siteConfig.state.name },
+  };
   return (
     <html lang={locale} className={`${body.variable} ${display.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="min-h-dvh bg-bg text-ink">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
         <Analytics />
       </body>
