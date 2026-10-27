@@ -100,6 +100,15 @@ def _ids(table: str, col: str, **eq) -> set:
 def remove_empty_events() -> int:
     """Events with no record behind them (left by an interrupted publish or a detach) are deleted, or hidden
     when something (a removal request) still points at them."""
+    # Records that found no New Mexico town but still point at an event: detach them (the event is then empty
+    # or keeps its other, placed records). These were the "site entries with no map spot".
+    stray = retry(lambda: db().table("ap_incidents").select("id,event_id").eq("geocode_status", "failed")
+                  .not_.is_("event_id", "null").limit(1000).execute().data) or []
+    for r in stray:
+        retry(lambda: db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute())
+        retry(lambda: db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute())
+    if stray:
+        print(f"records with no NM town detached from events: {len(stray)}", flush=True)
     used = _ids("ap_incidents", "event_id")
     events = _ids("ap_events", "id", hidden=False)
     empty = sorted(events - used)
