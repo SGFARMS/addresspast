@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "discover | batches | fars-inspect | peek-fra | peek-msha | public-dry | peek-news | peek-archive | peek-noaa | peek-ntsb | peek-wikidata | peek-abq | peek-gnis | peek-gnis-test"
+        description: "discover | batches | fars-inspect | peek-fra | peek-msha | public-dry | peek-news | peek-archive | peek-noaa | peek-ntsb | peek-wikidata | peek-abq | peek-gnis | peek-gnis-test | peek-osha"
         required: true
         default: discover
 

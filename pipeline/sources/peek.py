@@ -285,5 +285,35 @@ def gnis_test():
         print(f"  {n} / {c}: {gnis_town(n, c, county_fits)}")
 
 
+def osha():
+    """OSHA fatality data: links on the fatalities page, then one file's columns and NM rows; FARS 1990 city codes."""
+    from urllib.robotparser import RobotFileParser
+
+    for page in ("https://www.osha.gov/fatalities", "https://www.osha.gov/data", "https://www.osha.gov/severeinjury"):
+        rp = RobotFileParser("https://www.osha.gov/robots.txt")
+        try:
+            rp.read()
+        except Exception:
+            pass
+        r = requests.get(page, headers=UA, timeout=60)
+        links = sorted(set(re.findall(r'href="([^"]+\.(?:xlsx|xls|csv|zip))"', r.text, re.I)))
+        print(f"== {page}: {r.status_code}; ClaudeBot allowed {rp.can_fetch('ClaudeBot', page)}; files {links[:30]}")
+        other = [l for l in re.findall(r'href="([^"]+)"', r.text) if re.search(r"fatal|data|download|dataset", l, re.I)]
+        print("   links:", sorted(set(other))[:30])
+    try:
+        import openpyxl  # noqa: F401
+        print("openpyxl available")
+    except ImportError:
+        print("openpyxl missing")
+    # FARS before 1999: no GPS; which city/county columns does 1990 have?
+    import csv
+    z = zipfile.ZipFile(io.BytesIO(requests.get("https://static.nhtsa.gov/nhtsa/downloads/FARS/1990/National/FARS1990NationalCSV.zip",
+                                                headers=UA, timeout=300).content))
+    name = next(n for n in z.namelist() if re.search(r"accident\.csv$", n, re.I))
+    rows = [r for r in csv.DictReader(io.StringIO(z.read(name).decode("latin-1"))) if (r.get("STATE") or r.get("state")) == "35"]
+    print("FARS 1990 files", z.namelist()[:12], "NM rows", len(rows), "columns", list(rows[0])[:40] if rows else None)
+    print("sample", [{k: r.get(k) for k in r if k.upper() in ("CITY", "COUNTY", "LATITUDE", "LONGITUD", "MONTH", "DAY", "FATALS", "TWAY_ID")} for r in rows[:4]])
+
+
 if __name__ == "__main__":
-    {"gnis-test": gnis_test, "gnis": gnis, "wikidata": wikidata, "abq": abq, "fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
+    {"osha": osha, "gnis-test": gnis_test, "gnis": gnis, "wikidata": wikidata, "abq": abq, "fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
