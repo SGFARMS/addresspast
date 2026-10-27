@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly) | stats (counts only) | fars-inspect | fars (load NHTSA fatal crashes) | public-deaths (FRA crossings, MSHA mines, NTSB air crashes, NOAA weather) | dedupe-sweep (merge duplicates already on the map)"
+        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly) | stats (counts only) | fars-inspect | fars (load NHTSA fatal crashes) | public-deaths (FRA crossings, MSHA mines, NTSB air crashes, NOAA weather) | dedupe-sweep (merge duplicates already on the map) | quality (list records that aren't deaths) | quality-apply (hide them)"
         required: true
         default: nightly
 
@@ -85,6 +85,10 @@ jobs:
           set -e
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars python -m pipeline.fars load --from 2000 --to 2024
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 100 --max-minutes 45
+
+      - name: Records that are not a death (list, or hide with quality-apply)
+        if: steps.db.outputs.ok == 'true' && (inputs.job == 'quality' || inputs.job == 'quality-apply')
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality ${{ inputs.job == 'quality-apply' && '--apply' || '' }}
 
       - name: Merge duplicates already on the map
         if: steps.db.outputs.ok == 'true' && inputs.job == 'dedupe-sweep'

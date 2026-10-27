@@ -131,7 +131,11 @@ def to_rows(page: dict, items: list[dict], model: str | None = None) -> list[dic
     """Turn model items into ap_incidents rows. Names are scrubbed here, before anything is stored."""
     rows = []
     lang = page.get("language") or detect_language(page.get("text", ""))
+    from .quality import not_a_death
+
     for it in items:
+        if not_a_death(it.get("summary")):
+            continue  # "a suicide attempt", "expected to recover": nobody died
         summary, _hits = scrub_names(it.get("summary"))
         reason = review_reason(it)
         kind = it.get("place_kind") if it.get("place_kind") in PLACE_KINDS else "unknown"

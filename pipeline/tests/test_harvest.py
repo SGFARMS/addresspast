@@ -272,3 +272,14 @@ def test_dedupe_same_story_rule():
     assert rule_verdict(short, dict(short)) is None                               # too generic to be sure
     assert rule_verdict(w, {**w, "city": "Gibson"}) is None                       # other town
     assert date_gap_days({"incident_date": "1916-05-02"}, {"published_date": "1916-05-09"}) == 7
+
+
+def test_not_a_death():
+    from pipeline.quality import not_a_death
+
+    assert not_a_death("A suicide attempt by a porter at a saloon in Gallup was reported.")
+    assert not_a_death("A man was shot in a quarrel and is expected to recover.")
+    assert not not_a_death("A man attempted suicide and died later at the hospital.")
+    assert not not_a_death("Two men drowned in the river; a third survived.")
+    assert not not_a_death("A fatal shooting at a saloon in Gallup was reported.")
+    assert not not_a_death(None)
