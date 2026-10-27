@@ -32,10 +32,39 @@ def could_be_same(a: dict, b: dict) -> bool:
 
 
 
+_STOP = {"a", "an", "the", "was", "were", "of", "in", "at", "on", "near", "and", "to", "by", "from", "for", "with",
+         "his", "her", "their", "reported", "after", "had", "been", "who", "which", "that", "as", "is"}
+
+
+def _words(s: str | None) -> set[str]:
+    return {w for w in re.findall(r"[a-z]+", (s or "").lower()) if w not in _STOP and len(w) > 2}
+
+
+def summary_similarity(a: dict, b: dict) -> float:
+    """Word overlap of two summaries (0-1). Two papers retelling one death read almost the same."""
+    wa, wb = _words(a.get("summary")), _words(b.get("summary"))
+    if len(wa) < 4 or len(wb) < 4:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)
+
+
+def date_gap_days(a: dict, b: dict) -> int:
+    """Rough distance between two records' dates (incident date, else publication date); unknown = large."""
+    def _d(r):
+        for k in ("incident_date", "published_date"):
+            y, m, d = _ymd(r.get(k))
+            if y:
+                return y * 372 + (m or 6) * 31 + (d or 15)
+        return None
+    da, db = _d(a), _d(b)
+    return abs(da - db) if da is not None and db is not None else 10_000
+
+
 def rule_verdict(a: dict, b: dict) -> bool | None:
     """True = surely the same death, False = surely different, None = ask the model.
 
-    Same: the same exact day, same town and a compatible cause (two papers reporting one death).
+    Same: the same exact day, same town and a compatible cause (two papers reporting one death); or the
+    same town and cause with nearly identical summaries within a month.
     (Two finds on one page are left to the model: one page can report two different deaths.)
     Different: dates or publication dates too far apart (could_be_same is False)."""
     if not could_be_same(a, b):
@@ -45,5 +74,10 @@ def rule_verdict(a: dict, b: dict) -> bool | None:
     (ay, am, ad), (by, bm, bd) = _ymd(a.get("incident_date")), _ymd(b.get("incident_date"))
     same_town = (a.get("city") or "").strip().lower() == (b.get("city") or "").strip().lower() != ""
     if ad and bd and (ay, am, ad) == (by, bm, bd) and same_town and causes_fit:
+        return True
+    # The same story in two papers (or two editions): same town and cause, nearly the same words, close in time.
+    # Short generic lines ("A fatal shooting at a saloon was reported.") could be two different deaths: model.
+    distinctive = min(len(_words(a.get("summary"))), len(_words(b.get("summary")))) >= 6
+    if same_town and causes_fit and distinctive and summary_similarity(a, b) >= 0.7 and date_gap_days(a, b) <= 31:
         return True
     return None

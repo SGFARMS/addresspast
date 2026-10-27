@@ -257,3 +257,18 @@ def test_dedupe_rule_verdicts():
     assert rule_verdict(a, {**a, "incident_date": "1912-09-01"}) is False       # months apart
     assert rule_verdict(a, {**a, "incident_date": "1912-03"}) is None           # model decides
     assert rule_verdict(a, {**a, "cause_category": "accident"}) is None
+
+
+def test_dedupe_same_story_rule():
+    from pipeline.dedupe_rules import date_gap_days, rule_verdict
+
+    w = {"incident_date": "1916-05", "city": "Gallup", "cause_category": "homicide",
+         "summary": "The body of a young woman who had been assaulted and beaten was found near a road."}
+    assert rule_verdict(w, dict(w)) is True                                       # same story, two papers
+    other = {**w, "summary": "An Indian girl's body was found near a road outside Gallup after an assault."}
+    assert rule_verdict(w, other) is None                                         # different wording: model
+    short = {"incident_date": "1916-09", "city": "Gallup", "cause_category": "homicide",
+             "summary": "A fatal shooting at a saloon in Gallup was reported."}
+    assert rule_verdict(short, dict(short)) is None                               # too generic to be sure
+    assert rule_verdict(w, {**w, "city": "Gibson"}) is None                       # other town
+    assert date_gap_days({"incident_date": "1916-05-02"}, {"published_date": "1916-05-09"}) == 7

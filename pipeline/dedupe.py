@@ -18,7 +18,7 @@ from .common.ai import create_with_tool, tool_input
 from .common.config import MODEL_FAST as MODEL_DEDUPE
 from .common.db import db, retry
 from .common.runlog import PipelineRun
-from .dedupe_rules import rule_verdict
+from .dedupe_rules import date_gap_days, rule_verdict, summary_similarity
 
 client = Anthropic()
 
@@ -170,11 +170,21 @@ def check_incident(run, r: dict) -> int:
         return 0  # official crash records are one row per crash
     merged = 0
     cands = retry(lambda: db().rpc("ap_dedupe_candidates", {"p_incident_id": r["id"]}).execute().data) or []
-    for c in cands[:8]:
-        other = retry(lambda: db().table("ap_incidents").select(FIELDS).eq("id", c["candidate_id"]).single().execute().data)
+    # Already merged into this event: nothing to decide.
+    cands = [c for c in cands if c.get("candidate_event_id") != r.get("event_id")]
+    if not cands:
+        return 0
+    ids = [c["candidate_id"] for c in cands]
+    rows = {x["id"]: x for x in (retry(lambda: db().table("ap_incidents").select(FIELDS).in_("id", ids).execute().data) or [])}
+    dist = {c["candidate_id"]: c.get("distance_m") for c in cands}
+    # Town-level candidates all sit at distance 0, so rank by what tells twins apart: closest date, most
+    # similar wording. The 8 checked are then the likely twins, not an arbitrary 8 of the town's records.
+    ranked = sorted(rows.values(), key=lambda o: (date_gap_days(r, o), -summary_similarity(r, o)))
+    for other in ranked[:8]:
+        c = {"distance_m": dist.get(other["id"])}
         verdict = rule_verdict(r, other)
         if verdict is not None:
-            same, why, model = verdict, ("same day, town and cause" if verdict else "dates too far apart"), "rule"
+            same, why, model = verdict, ("same town and cause, same day or same story" if verdict else "dates too far apart"), "rule"
         else:
             msg = create_with_tool(
                 client,
