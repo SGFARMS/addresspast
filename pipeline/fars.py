@@ -7,6 +7,11 @@ so it skips the geocoder; dedupe then makes it a public event without any AI cal
 
     python -m pipeline.fars inspect 2022              # print the file names and accident.csv columns
     python -m pipeline.fars load --from 2000 --to 2024 [--dry-run]
+    python -m pipeline.fars load-old --from 1975 --to 2000 [--dry-run]   # no GPS yet: placed at their town
+
+Before 2001 FARS has no coordinates, only a county and a city code (GSA Geographic Locator Codes). The
+later files spell the city out (CITYNAME), so the code -> name list is built from them; crashes outside
+any city (code 0) have no place more exact than a county and are left out.
 """
 from __future__ import annotations
 
@@ -132,6 +137,98 @@ def to_incident(row: dict, year: int) -> dict | None:
     }
 
 
+def city_codes(years=range(2015, 2025)) -> dict[tuple[int, int], str]:
+    """(county code, city code) -> city name, from the FARS years that include CITYNAME."""
+    out: dict[tuple[int, int], str] = {}
+    for y in years:
+        try:
+            rows = accident_rows(download(y))
+        except RuntimeError as e:
+            print(f"city codes {y}: skipped ({e})", flush=True)
+            continue
+        for r in rows:
+            if int(_num(r.get("STATE")) or 0) != NM:
+                continue
+            c, k = int(_num(r.get("COUNTY")) or 0), int(_num(r.get("CITY")) or 0)
+            name = _name(r.get("CITYNAME"))
+            if k and name:
+                out[(c, k)] = name
+    print(f"FARS city codes: {len(out)} New Mexico cities", flush=True)
+    return out
+
+
+def to_old_incident(row: dict, year: int, cities: dict[tuple[int, int], str]) -> dict | None:
+    """A pre-GPS crash inside a city, placed at that town by the geocoder (precision city)."""
+    if int(_num(row.get("STATE")) or 0) != NM:
+        return None
+    lat, lng = _num(row.get("LATITUDE")), _num(row.get("LONGITUD"))
+    if lat is not None and lng is not None and 31.0 <= lat <= 37.5 and -109.5 <= lng <= -102.5:
+        return None  # has GPS: `load` handles it
+    c, k = int(_num(row.get("COUNTY")) or 0), int(_num(row.get("CITY")) or 0)
+    city = cities.get((c, k))
+    if not city:
+        return None
+    case = row.get("ST_CASE") or ""
+    m, d = int(_num(row.get("MONTH")) or 0), int(_num(row.get("DAY")) or 0)
+    date = f"{year}-{m:02d}-{d:02d}" if 1 <= m <= 12 and 1 <= d <= 31 else (f"{year}-{m:02d}" if 1 <= m <= 12 else str(year))
+    road = (row.get("TWAY_ID") or "").strip()
+    n = int(_num(row.get("FATALS")) or 1)
+    where = f" on {road}" if road and not road.isdigit() else ""
+    return {
+        "source_url": f"{SOURCE_PAGE}#case-{year}-{case}",
+        "source_name": f"{SOURCE_NAME}, case {case}",
+        "published_date": None,
+        "incident_date": date,
+        "address_raw": (f"Fatal crash in {city}" + where)[:300],
+        "city": city,
+        "county": NM_COUNTIES.get(c),
+        "location_precision": "city_only",
+        "place_kind": "road",
+        "cause_category": "accident",
+        "summary": f"A fatal traffic crash in {city}{where} was recorded; {n} {'person' if n == 1 else 'people'} died.",
+        "summary_scrubbed": True,
+        "confidence": 0.99,
+        "source_language": "en",
+        "record_type": "road_death",
+        "verified": True,
+        "needs_review": False,
+    }
+
+
+def load_old(first: int, last: int, dry_run: bool):
+    from .common.runlog import PipelineRun
+
+    import contextlib
+    import types
+
+    cities = city_codes()
+    total, by_year = 0, {}
+    # A dry run needs no database (bulk.yml has none), so no run log either.
+    cm = contextlib.nullcontext(types.SimpleNamespace()) if dry_run else PipelineRun("fars_old")
+    with cm as run:
+        for y in range(first, last + 1):
+            try:
+                rows = [i for i in (to_old_incident(r, y, cities) for r in accident_rows(download(y))) if i]
+            except RuntimeError as e:
+                print(f"{y}: skipped ({e})", flush=True)
+                continue
+            by_year[y] = len(rows)
+            total += len(rows)
+            if not dry_run:
+                from .common.db import db, retry
+
+                for i in range(0, len(rows), 500):
+                    chunk = rows[i : i + 500]
+                    retry(lambda: db().table("ap_incidents").upsert(chunk, on_conflict="source_url,address_raw",
+                                                                    ignore_duplicates=True).execute())
+            print(f"{y}: {len(rows)} fatal crashes inside a New Mexico town" + (" (dry run)" if dry_run else ""), flush=True)
+            if dry_run and rows and y == first:
+                print("  sample:", rows[0])
+        run.items_out = total
+        run.meta = {"by_year": by_year, "dry_run": dry_run}
+    print(f"FARS {first}-{last} (no GPS, town level): {total} crashes" + (" (dry run, nothing written)" if dry_run else ""))
+
+
 def inspect(year: int):
     z = download(year)
     print("files:", z.namelist()[:30])
@@ -180,6 +277,15 @@ if __name__ == "__main__":
     lp.add_argument("--from", dest="first", type=int, default=2000)
     lp.add_argument("--to", dest="last", type=int, default=2024)
     lp.add_argument("--dry-run", action="store_true")
+    lo = sub.add_parser("load-old")
+    lo.add_argument("--from", dest="first", type=int, default=1975)
+    lo.add_argument("--to", dest="last", type=int, default=2000)
+    lo.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    inspect(a.year) if a.cmd == "inspect" else load(a.first, a.last, a.dry_run)
+    if a.cmd == "inspect":
+        inspect(a.year)
+    elif a.cmd == "load-old":
+        load_old(a.first, a.last, a.dry_run)
+    else:
+        load(a.first, a.last, a.dry_run)
     sys.exit(0)

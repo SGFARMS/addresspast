@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "discover | batches | fars-inspect | peek-fra | peek-msha | public-dry | peek-news | peek-archive | peek-noaa | peek-ntsb | peek-wikidata | peek-abq | peek-gnis | peek-gnis-test | peek-osha"
+        description: "discover | batches | fars-inspect | peek-fra | peek-msha | public-dry | peek-news | peek-archive | peek-noaa | peek-ntsb | peek-wikidata | peek-abq | peek-gnis | peek-gnis-test | peek-osha | fars-old-dry"
         required: true
         default: discover
 
@@ -30,6 +30,8 @@ jobs:
             NOTICE_ON_SUCCESS=1 .github/scripts/run.sh "$c" python -m pipeline.sources.peek "${c#peek-}"
           elif [ "${{ inputs.command }}" = "public-dry" ]; then
             NOTICE_ON_SUCCESS=1 .github/scripts/run.sh public-dry python -m pipeline.public_deaths all --dry-run
+          elif [ "${{ inputs.command }}" = "fars-old-dry" ]; then
+            NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-old-dry python -m pipeline.fars load-old --from 1975 --to 2000 --dry-run
           elif [ "${{ inputs.command }}" = "fars-inspect" ]; then
             for y in 2001 2005 2007; do NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-inspect-$y python -m pipeline.fars inspect $y; done
           else
