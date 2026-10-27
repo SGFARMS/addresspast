@@ -127,8 +127,9 @@ jobs:
         run: |
           set -e
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 6000 --max-minutes 50
-          # Then keep merging repeat articles already on the map (resumes where the last sweep stopped)
-          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 25 || true
+          # Then keep merging repeat articles already on the map (resumes where the last sweep stopped; the time
+          # left after reading, placing and publishing, which is most of a run now that the archive is read)
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 200 || true
           # List stored records that turn out not to be a death (hidden only by the pipeline job quality-apply)
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality || true
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
