@@ -20,7 +20,8 @@ _NOT_DEATH = re.compile(
 # ...unless it also says someone did die.
 _DEATH = re.compile(
     r"\b(died|dies|dead|death|deaths|killed|fatal(ly)?|drowned|body|bodies|perished|slain|murdered|"
-    r"lynched|executed|hanged|burned\s+to\s+death|frozen\s+to\s+death|succumbed)\b",
+    r"lynched|executed|hanged|burned\s+to\s+death|frozen\s+to\s+death|succumbed|dying|mortally|"
+    r"not\s+(expected\s+)?to\s+(survive|live|recover))\b",
     re.I,
 )
 

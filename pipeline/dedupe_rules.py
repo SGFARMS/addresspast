@@ -78,6 +78,10 @@ def rule_verdict(a: dict, b: dict) -> bool | None:
     # The same story in two papers (or two editions): same town and cause, nearly the same words, close in time.
     # Short generic lines ("A fatal shooting at a saloon was reported.") could be two different deaths: model.
     distinctive = min(len(_words(a.get("summary"))), len(_words(b.get("summary")))) >= 6
-    if same_town and causes_fit and distinctive and summary_similarity(a, b) >= 0.7 and date_gap_days(a, b) <= 31:
+    sim, gap = summary_similarity(a, b), date_gap_days(a, b)
+    if same_town and causes_fit and distinctive and sim >= 0.7 and gap <= 31:
         return True
+    # Months apart and telling different stories: different deaths (saves a model call on most town pairs).
+    if gap > 62 and sim < 0.3:
+        return False
     return None

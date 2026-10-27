@@ -17,7 +17,7 @@ from anthropic import Anthropic
 from .common.ai import create_with_tool, tool_input
 from .common.config import MODEL_FAST as MODEL_DEDUPE
 from .common.db import db, retry
-from .common.runlog import PipelineRun
+from .common.runlog import BudgetExceeded, PipelineRun
 from .dedupe_rules import date_gap_days, rule_verdict, summary_similarity
 
 client = Anthropic()
@@ -180,7 +180,7 @@ def check_incident(run, r: dict) -> int:
     # Town-level candidates all sit at distance 0, so rank by what tells twins apart: closest date, most
     # similar wording. The 8 checked are then the likely twins, not an arbitrary 8 of the town's records.
     ranked = sorted(rows.values(), key=lambda o: (date_gap_days(r, o), -summary_similarity(r, o)))
-    for other in ranked[:8]:
+    for other in ranked[:6]:
         c = {"distance_m": dist.get(other["id"])}
         verdict = rule_verdict(r, other)
         if verdict is not None:
@@ -230,6 +230,8 @@ def check_incident_safe(run, r: dict) -> int:
     """One record that fails (a dropped connection after the retries, a race) never stops the run."""
     try:
         return check_incident(run, r)
+    except BudgetExceeded:
+        raise  # the run's AI budget is spent: stop, don't keep calling
     except Exception as e:
         print(f"  record {r.get('id')}: duplicate check skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
         return 0
@@ -256,14 +258,20 @@ def sweep(max_minutes: float):
                 last = 0  # start over next time
                 break
             for r in rows:
-                merges += check_incident_safe(run, r)
+                try:
+                    merges += check_incident_safe(run, r)
+                except BudgetExceeded as e:
+                    print(f"  {e}", flush=True)
+                    max_minutes = 0  # end the sweep; it resumes from here next time
+                    break
                 checked += 1
                 last = r["id"]
                 if (time.monotonic() - t0) / 60 >= max_minutes:
                     break
         run.items_in, run.items_out = checked, merges
         run.meta = {"last_id": last}
-    print(f"dedupe sweep: checked {checked} records, merged {merges} duplicates (next start after id {last})")
+    print(f"dedupe sweep: checked {checked} records, merged {merges} duplicates (next start after id {last}); "
+          f"AI cost ${run.cost:.2f}")
 
 
 def main(limit: int, max_minutes: float = 40):

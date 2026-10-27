@@ -283,3 +283,15 @@ def test_not_a_death():
     assert not not_a_death("Two men drowned in the river; a third survived.")
     assert not not_a_death("A fatal shooting at a saloon in Gallup was reported.")
     assert not not_a_death(None)
+
+
+def test_dedupe_far_apart_rule_and_dying():
+    from pipeline.dedupe_rules import rule_verdict
+    from pipeline.quality import not_a_death
+
+    a = {"incident_date": "1912-03", "city": "Gallup", "cause_category": "accident",
+         "summary": "A miner was killed by falling rock at a coal mine near Gallup."}
+    b = {**a, "incident_date": "1912-09", "summary": "A brakeman fell between cars in the rail yard and died."}
+    assert rule_verdict(a, b) is False                           # six months apart, different stories
+    assert not not_a_death("A suicide attempt by cutting was reported; the man was not expected to survive.")
+    assert not not_a_death("A man who swallowed poison was described as dying after a suicide attempt.")

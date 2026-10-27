@@ -92,7 +92,9 @@ jobs:
 
       - name: Merge duplicates already on the map
         if: steps.db.outputs.ok == 'true' && inputs.job == 'dedupe-sweep'
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 100
+        run: |
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality --apply || true
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 100
 
       - name: Railroad, mine, air-crash and weather deaths (load, then publish)
         if: steps.db.outputs.ok == 'true' && inputs.job == 'public-deaths'
