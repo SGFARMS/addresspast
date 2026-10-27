@@ -234,5 +234,42 @@ def abq():
             print(f"{q}: {d.get('name')} | {d.get('title')} | {[x.get('url') for x in d.get('resources', [])][:2]}")
 
 
+GNIS_BUCKET = "https://prd-tnm.s3.amazonaws.com/"
+
+
+def gnis():
+    """USGS GNIS: where the New Mexico names file lives, its columns, feature classes and sample lookups."""
+    import collections
+
+    keys = []
+    for prefix in ("StagedProducts/GeographicNames/DomesticNames/", "StagedProducts/GeographicNames/"):
+        r = requests.get(GNIS_BUCKET, params={"prefix": prefix, "max-keys": 1000}, headers=UA, timeout=60)
+        found = re.findall(r"<Key>([^<]+)</Key>", r.text)
+        print(f"list {prefix}: {r.status_code}, {len(found)} keys; NM: {[k for k in found if '_NM' in k or 'NM_' in k][:10]}")
+        print("   other examples:", [k for k in found if 'National' in k or 'Historical' in k or 'Antarctica' in k][:8])
+        keys += found
+    nm = next((k for k in keys if re.search(r"DomesticNames_NM.*\.zip$", k)), None)
+    if not nm:
+        print("no NM file found")
+        return
+    z = zipfile.ZipFile(io.BytesIO(requests.get(GNIS_BUCKET + nm, headers=UA, timeout=300).content))
+    print("zip", nm, z.namelist())
+    name = next(n for n in z.namelist() if n.lower().endswith((".txt", ".csv")))
+    text = z.read(name).decode("utf-8-sig", errors="replace")
+    import csv
+    delim = "|" if text[:2000].count("|") > text[:2000].count(",") else ","
+    rows = list(csv.DictReader(io.StringIO(text), delimiter=delim))
+    print(f"{len(rows)} rows; columns {list(rows[0])}")
+    cls = collections.Counter(r.get("feature_class") for r in rows)
+    print("classes:", cls.most_common(40))
+    hist = [r for r in rows if "historical" in (r.get("feature_name") or "").lower()]
+    print("names with 'historical':", len(hist), [(r.get("feature_name"), r.get("feature_class")) for r in hist[:8]])
+    for want in ("Fort Sumner", "Mora", "Lincoln", "White Oaks", "Elizabethtown", "Shakespeare", "Dawson", "Kingston",
+                 "Golden", "Hagan", "Chloride", "Loma Parda", "Cabezon", "Madrid", "Carthage"):
+        hits = [(r.get("feature_name"), r.get("feature_class"), r.get("county_name"), r.get("prim_lat_dec"), r.get("prim_long_dec"))
+                for r in rows if (r.get("feature_name") or "").lower().replace(" (historical)", "") == want.lower()]
+        print(f"  {want}: {hits[:4]}")
+
+
 if __name__ == "__main__":
-    {"wikidata": wikidata, "abq": abq, "fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
+    {"gnis": gnis, "wikidata": wikidata, "abq": abq, "fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
