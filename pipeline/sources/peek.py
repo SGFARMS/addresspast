@@ -271,5 +271,19 @@ def gnis():
         print(f"  {want}: {hits[:4]}")
 
 
+def gnis_test():
+    """Real lookups through pipeline.gnis (both files, county rules)."""
+    from ..geocode import county_fits
+    from ..gnis import gnis_town, index
+
+    idx = index()
+    print("names indexed:", len(idx))
+    for n, c in [("Dawson", None), ("White Oaks", None), ("Hagan", None), ("Loma Parda", None), ("Loma Parda", "Mora"),
+                 ("Ft. Sumner", "De Baca"), ("Lincoln", "Lincoln"), ("Mora", "Mora"), ("El Paso", None), ("Chicago", None),
+                 ("Pueblo", None), ("Elizabethtown", "Colfax"), ("Cerrillos", None), ("Kelly", "Socorro"), ("Fort Bayard", None),
+                 ("Las Vegas", None), ("Lake Valley", None), ("Gardiner", "Colfax"), ("Koehler", None), ("Sugarite", None)]:
+        print(f"  {n} / {c}: {gnis_town(n, c, county_fits)}")
+
+
 if __name__ == "__main__":
-    {"gnis": gnis, "wikidata": wikidata, "abq": abq, "fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
+    {"gnis-test": gnis_test, "gnis": gnis, "wikidata": wikidata, "abq": abq, "fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()

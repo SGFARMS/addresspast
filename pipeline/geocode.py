@@ -204,17 +204,29 @@ def county_fits(record_county: str | None, town_county: str | None) -> bool:
 _COUNTY_PHRASE = re.compile(r"\b[\w ]{0,20}?\b(?:county|co\.)\b|\bcondado\s+de\s+\w+", re.I)
 
 
+def _gnis(name: str | None, county: str | None) -> Town | None:
+    """USGS names first (ghost towns, camps, forts; no web request), Photon only when GNIS has nothing."""
+    from .gnis import gnis_town
+
+    try:
+        return gnis_town(name, county, county_fits)
+    except Exception as e:
+        print(f"gnis lookup skipped: {type(e).__name__}", flush=True)
+        return None
+
+
 def resolve_town(row: dict, recheck: bool = False) -> Town | None:
     """Find the town for a record.
 
-    1. The record's own town: the built-in pilot list (with OCR variants), then anywhere in NM via Photon.
+    1. The record's own town: the built-in pilot list (with OCR variants), then USGS place names (GNIS,
+       ghost towns included), then anywhere in NM via Photon.
     2. A pilot town named in the address text ("county" phrases removed, so "Valencia county" isn't the
        village of Valencia).
     3. No town at all: a local item, so the town the paper was printed in (trusted as New Mexico).
     """
     city = (row.get("city") or "").strip()
     if city:
-        t = town_by_name(city) or nm_town(city, row.get("county"), recheck)
+        t = town_by_name(city) or _gnis(city, row.get("county")) or nm_town(city, row.get("county"), recheck)
         if t and county_fits(row.get("county"), t.county):
             return t
         if t:
@@ -226,7 +238,8 @@ def resolve_town(row: dict, recheck: bool = False) -> Town | None:
     if not city:
         town_from_paper = paper_town(row.get("source_url"))
         if town_from_paper:
-            t = town_by_name(town_from_paper) or nm_town(town_from_paper, row.get("county"), recheck, trusted=True)
+            t = (town_by_name(town_from_paper) or _gnis(town_from_paper, row.get("county"))
+                 or nm_town(town_from_paper, row.get("county"), recheck, trusted=True))
             # An Albuquerque paper's item about Grant County is not in Albuquerque.
             return t if t and county_fits(row.get("county"), t.county) else None
     return None
