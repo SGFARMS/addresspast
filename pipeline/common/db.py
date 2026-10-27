@@ -17,8 +17,8 @@ _TRANSIENT = ("Server disconnected", "Connection refused", "connection error", "
               "timed out", "ReadTimeout", "ConnectError", "RemoteProtocolError", "PGRST000", "57P01", "503", "502")
 
 
-def retry(fn, attempts: int = 4):
-    """Run fn(); on a dropped connection or a database restart, wait and try again (2 s, 5 s, 15 s)."""
+def retry(fn, attempts: int = 6):
+    """Run fn(); on a dropped connection or a database restart, wait and try again (2, 5, 15, 30, 60 s)."""
     import time
 
     for i in range(attempts):
@@ -28,4 +28,4 @@ def retry(fn, attempts: int = 4):
             text = f"{type(e).__name__}: {e}"
             if i == attempts - 1 or not any(t in text for t in _TRANSIENT):
                 raise
-            time.sleep((2, 5, 15)[min(i, 2)])
+            time.sleep((2, 5, 15, 30, 60)[min(i, 4)])

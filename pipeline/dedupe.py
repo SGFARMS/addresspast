@@ -53,20 +53,63 @@ def _make_event(r: dict) -> dict:
 
 
 def _make_event_once(r: dict) -> dict:
-    if r.get("event_id"):  # a retry after the insert already went through
-        return r
-    ev = db().table("ap_events").insert({
-        "record_type": r.get("record_type") or "death",
-        "cause_category": r.get("cause_category") or "unknown",
-        "event_year": r.get("incident_year"),
-        "city": r.get("city"),
-        "county": r.get("county"),
-        "summary": r.get("summary"),
-    }).execute().data[0]
-    db().table("ap_incidents").update({"event_id": ev["id"]}).eq("id", r["id"]).execute()
-    db().rpc("ap_refresh_event", {"p_event_id": ev["id"]}).execute()
-    r["event_id"] = ev["id"]
+    # Each step is remembered on r, so a retry after a dropped connection picks up where it stopped
+    # instead of inserting a second event (that left empty or doubled events before Oct 27).
+    if not r.get("_event"):
+        ev = db().table("ap_events").insert({
+            "record_type": r.get("record_type") or "death",
+            "cause_category": r.get("cause_category") or "unknown",
+            "event_year": r.get("incident_year"),
+            "city": r.get("city"),
+            "county": r.get("county"),
+            "summary": r.get("summary"),
+        }).execute().data[0]
+        r["_event"] = ev["id"]
+    if not r.get("event_id"):
+        db().table("ap_incidents").update({"event_id": r["_event"]}).eq("id", r["id"]).execute()
+        r["event_id"] = r["_event"]
+    db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute()
     return r
+
+
+def _make_event_safe(r: dict) -> dict | None:
+    """One record that still fails after the retries is left for the next run, never stops the publish."""
+    try:
+        return _make_event(r)
+    except Exception as e:
+        print(f"  record {r.get('id')}: not published this time ({type(e).__name__}: {str(e)[:120]})", flush=True)
+        return None
+
+
+def _ids(table: str, col: str, **eq) -> set:
+    out: set = set()
+    last = None
+    while True:
+        q = db().table(table).select(f"id,{col}" if col != "id" else "id")
+        for k, v in eq.items():
+            q = q.eq(k, v)
+        if last is not None:
+            q = q.gt("id", last)
+        rows = retry(lambda: q.order("id").limit(1000).execute().data) or []
+        if not rows:
+            return out
+        out.update(r[col] for r in rows if r.get(col) is not None)
+        last = rows[-1]["id"]
+
+
+def remove_empty_events() -> int:
+    """Events with no record behind them (left by an interrupted publish or a detach) are deleted, or hidden
+    when something (a removal request) still points at them."""
+    used = _ids("ap_incidents", "event_id")
+    events = _ids("ap_events", "id", hidden=False)
+    empty = sorted(events - used)
+    for eid in empty:
+        try:
+            retry(lambda: db().table("ap_events").delete().eq("id", eid).execute())
+        except Exception:
+            retry(lambda: db().table("ap_events").update({"hidden": True}).eq("id", eid).execute())
+    print(f"empty events removed: {len(empty)} (of {len(events)} visible events)", flush=True)
+    return len(empty)
 
 
 def ensure_events(run, max_minutes: float = 40) -> list[dict]:
@@ -76,21 +119,25 @@ def ensure_events(run, max_minutes: float = 40) -> list[dict]:
 
     t0 = time.monotonic()
     made: list[dict] = []
+    last_id = 0
     # 2 at a time: each event is three requests including a recompute; more than that once knocked the
     # shared database over (Oct 26).
     with ThreadPoolExecutor(max_workers=2) as pool:
         while (time.monotonic() - t0) / 60 < max_minutes:
             # Only geocoded, visible records that aren't waiting for human review become events.
-            rows = (
+            rows = retry(lambda: (
                 db().table("ap_incidents").select(FIELDS)
                 .is_("event_id", "null").eq("hidden", False).eq("needs_review", False)
                 .not_.is_("geocode_status", "null")
                 .neq("geocode_status", "failed")  # no New Mexico town: never becomes a public event
-                .order("id").limit(1000).execute().data
-            ) or []
+                .gt("id", last_id).order("id").limit(1000).execute().data
+            )) or []
             if not rows:
                 break
-            for r in pool.map(_make_event, rows):
+            last_id = rows[-1]["id"]  # records that failed this time are skipped until the next run
+            for r in pool.map(_make_event_safe, rows):
+                if r is None:
+                    continue
                 made.append(r)
                 run.items_in += 1
             print(f"  published {len(made)} so far", flush=True)
@@ -185,6 +232,10 @@ def sweep(max_minutes: float):
 def main(limit: int, max_minutes: float = 40):
     t0 = time.monotonic()
     with PipelineRun("dedupe") as run:
+        try:
+            run.meta = {"empty_events_removed": remove_empty_events()}
+        except Exception as e:  # housekeeping never blocks publishing
+            print(f"empty-event cleanup skipped: {type(e).__name__}: {str(e)[:150]}", flush=True)
         fresh = ensure_events(run, max_minutes)[:limit]
         for r in fresh:
             if (time.monotonic() - t0) / 60 >= max_minutes * 1.5:
