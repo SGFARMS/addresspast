@@ -5,8 +5,12 @@
   has no coordinates. Layer: road_death ("Fatal traffic crash"), since they happen where a road
   crosses the tracks.
 - MSHA fatal mine accidents in New Mexico (2000-today), pinned at the mine. Layer: death (accident).
+- NTSB fatal aircraft accidents in New Mexico (1982-today), pinned at the crash site. Layer: death (accident).
+  Needs mdbtools (mdb-export) for NTSB's Access database.
+- NOAA Storm Events deaths in New Mexico (1950-today: floods, lightning, heat, cold, wind), at the
+  event's GPS point when it has one, otherwise the town. Layer: death (accident).
 
-    python -m pipeline.public_deaths fra|msha|all [--dry-run]
+    python -m pipeline.public_deaths fra|msha|ntsb|noaa|all [--dry-run]
 """
 from __future__ import annotations
 
@@ -199,6 +203,124 @@ def msha_rows() -> list[dict]:
     return out
 
 
+# ── NTSB ────────────────────────────────────────────────────────────────────────────────────────
+NTSB = "https://data.ntsb.gov/avdata/FileDirectory/DownloadFile?fileID=C%3A%5Cavdata%5C{name}"
+NTSB_PAGE = "https://www.ntsb.gov/Pages/investigations.aspx"
+
+
+def ntsb_rows() -> list[dict]:
+    import os
+    import subprocess
+    import tempfile
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for name in ("avall.zip", "Pre2008.zip"):
+        r = requests.get(NTSB.format(name=name), headers=UA, timeout=900)
+        r.raise_for_status()
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        mdb = next(n for n in z.namelist() if n.lower().endswith((".mdb", ".accdb")))
+        d = tempfile.mkdtemp()
+        path = z.extract(mdb, d)
+        text = subprocess.run(["mdb-export", path, "events"], capture_output=True, text=True, check=True).stdout
+        os.remove(path)
+        for e in csv.DictReader(io.StringIO(text)):
+            if (e.get("ev_state") or "").upper() != "NM" or int(_num(e.get("inj_tot_f"))) <= 0:
+                continue
+            ev = e.get("ev_id") or ""
+            if ev in seen:
+                continue
+            seen.add(ev)
+            n = int(_num(e.get("inj_tot_f")))
+            y = int(_num(e.get("ev_year"))) or None
+            mo = re.match(r"(\d{1,2})/(\d{1,2})/", e.get("ev_date") or "")
+            date = f"{y}-{int(mo.group(1)):02d}-{int(mo.group(2)):02d}" if (y and mo) else (str(y) if y else None)
+            city = _title(e.get("ev_city"))
+            apt = _title(e.get("apt_name"))
+            near = f" near {city}" if city else ""
+            row = {
+                "source_url": f"{NTSB_PAGE}#ntsb-{e.get('ntsb_no') or ev}",
+                "source_name": f"National Transportation Safety Board aviation accident {e.get('ntsb_no') or ev}",
+                "published_date": None,
+                "incident_date": date,
+                "address_raw": (f"Aircraft crash site{near}" + (f" ({apt})" if apt else ""))[:300],
+                "city": city,
+                "county": None,
+                "location_precision": "landmark",
+                "place_kind": "other",
+                "cause_category": "accident",
+                "summary": f"A fatal aircraft accident{near} was recorded; {n} {'person' if n == 1 else 'people'} died.",
+                "summary_scrubbed": True,
+                "confidence": 0.99,
+                "source_language": "en",
+                "record_type": "death",
+                "verified": True,
+                "needs_review": False,
+            }
+            lat, lng = _coord(e.get("dec_latitude")), _coord(e.get("dec_longitude"))
+            if _in_nm(lat, lng):
+                row.update({"lat": round(lat, 6), "lng": round(lng, 6), "geocode_status": "ok", "geocode_source": "ntsb",  # type: ignore[arg-type]
+                            "geocode_precision": "landmark", "matched_address": f"NTSB crash site {ev}"})
+            out.append(row)
+    print(f"NTSB: {len(out)} fatal New Mexico aircraft accidents, {sum(1 for r in out if r.get('lat'))} with GPS")
+    return out
+
+
+# ── NOAA Storm Events ───────────────────────────────────────────────────────────────────────────
+NOAA_DIR = "https://www.ncei.noaa.gov/pub/data/swdi/stormevents/csvfiles/"
+NOAA_PAGE = "https://www.ncdc.noaa.gov/stormevents/eventdetails.jsp?id={id}"
+
+
+def noaa_rows() -> list[dict]:
+    import gzip
+
+    listing = requests.get(NOAA_DIR, headers=UA, timeout=120).text
+    files = sorted(set(re.findall(r'href="(StormEvents_details-ftp_v1\.0_d\d{4}_c\d+\.csv\.gz)"', listing)))
+    out = []
+    for f in files:
+        txt = gzip.decompress(requests.get(NOAA_DIR + f, headers=UA, timeout=300).content).decode("latin-1")
+        for e in csv.DictReader(io.StringIO(txt)):
+            if e.get("STATE") != "NEW MEXICO":
+                continue
+            n = int(_num(e.get("DEATHS_DIRECT")) + _num(e.get("DEATHS_INDIRECT")))
+            if n <= 0:
+                continue
+            ym = (e.get("BEGIN_YEARMONTH") or "").strip()
+            day = int(_num(e.get("BEGIN_DAY")))
+            date = f"{ym[:4]}-{ym[4:6]}-{day:02d}" if len(ym) == 6 and 1 <= day <= 31 else (ym[:4] or None)
+            kind = (e.get("EVENT_TYPE") or "weather event").strip().lower()
+            # "3W ALBUQUERQUE" / "(ABQ)ALBUQUERQUE INTL" -> "Albuquerque"
+            place = _title(re.sub(r"^\d+(\.\d+)?\s*[NSEW]{1,3}\s+|^\([A-Z0-9]+\)", "", (e.get("BEGIN_LOCATION") or "").strip()))
+            county = _title(e.get("CZ_NAME")) if (e.get("CZ_TYPE") or "").upper() == "C" else None
+            near = f" near {place}" if place else (f" in {county} County" if county else "")
+            row = {
+                "source_url": NOAA_PAGE.format(id=e.get("EVENT_ID")),
+                "source_name": f"NOAA Storm Events Database, event {e.get('EVENT_ID')}",
+                "published_date": None,
+                "incident_date": date,
+                "address_raw": (f"{kind.capitalize()}{near}")[:300],
+                "city": place,
+                "county": county,
+                "location_precision": "landmark" if e.get("BEGIN_LAT") else "city_only",
+                "place_kind": "other",
+                "cause_category": "accident",
+                "summary": f"A weather-related death ({kind}){near} was recorded; {n} {'person' if n == 1 else 'people'} died.",
+                "summary_scrubbed": True,
+                "confidence": 0.95,
+                "source_language": "en",
+                "record_type": "death",
+                "verified": True,
+                "needs_review": False,
+            }
+            lat, lng = _coord(e.get("BEGIN_LAT")), _coord(e.get("BEGIN_LON"))
+            if _in_nm(lat, lng):
+                row.update({"lat": round(lat, 6), "lng": round(lng, 6), "geocode_status": "ok", "geocode_source": "noaa",  # type: ignore[arg-type]
+                            "geocode_precision": "landmark", "matched_address": f"NOAA event {e.get('EVENT_ID')}"})
+            out.append(row)
+    print(f"NOAA: {len(out)} New Mexico weather events with deaths, {sum(1 for r in out if r.get('lat'))} with GPS")
+    return out
+
+
 def save(rows: list[dict], dry_run: bool):
     if dry_run or not rows:
         for r in rows[:3]:
@@ -219,10 +341,16 @@ def save(rows: list[dict], dry_run: bool):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("which", choices=["fra", "msha", "all"])
+    ap.add_argument("which", choices=["fra", "msha", "ntsb", "noaa", "all"])
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    if a.which in ("fra", "all"):
-        save(fra_rows(), a.dry_run)
-    if a.which in ("msha", "all"):
-        save(msha_rows(), a.dry_run)
+    failed = []
+    for name, fn in (("fra", fra_rows), ("msha", msha_rows), ("ntsb", ntsb_rows), ("noaa", noaa_rows)):
+        if a.which in (name, "all"):
+            try:  # one slow or broken source never stops the others
+                save(fn(), a.dry_run)
+            except Exception as e:
+                failed.append(name)
+                print(f"{name}: failed: {type(e).__name__}: {str(e)[:300]}", flush=True)
+    if failed:
+        raise SystemExit(f"failed: {', '.join(failed)}")

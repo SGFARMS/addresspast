@@ -25,7 +25,7 @@ jobs:
       - name: Run
         run: |
           c="${{ inputs.command }}"
-          if [ "$c" = "peek-ntsb" ]; then sudo apt-get install -y -qq mdbtools >/dev/null; fi
+          if [ "$c" = "peek-ntsb" ] || [ "$c" = "public-dry" ]; then sudo apt-get install -y -qq mdbtools >/dev/null; fi
           if [ "${c#peek-}" != "$c" ]; then
             NOTICE_ON_SUCCESS=1 .github/scripts/run.sh "$c" python -m pipeline.sources.peek "${c#peek-}"
           elif [ "${{ inputs.command }}" = "public-dry" ]; then
