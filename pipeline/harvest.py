@@ -365,10 +365,14 @@ class Harvester:
         return False
 
     def harvest_rss(self):
-        from .sources.rss import FEEDS, fetch_article_text, fetch_feed, new_session
+        from .sources.rss import FEEDS, ai_allowed, fetch_article_text, fetch_feed, new_session
 
         session = new_session()
         for name, url, city in FEEDS:
+            if not ai_allowed(url, session):
+                self.stats.feeds[name] = "skipped: the outlet's robots.txt opts out of AI reading"
+                print(f"feed {name}: skipped (robots.txt opts out of AI reading)", flush=True)
+                continue
             try:
                 arts = fetch_feed(name, url, city, session)
             except Exception as e:

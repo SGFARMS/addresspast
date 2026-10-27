@@ -118,5 +118,81 @@ def archive():
             print(f"== {site}: {type(e).__name__}: {str(e)[:200]}")
 
 
+NOAA_DIR = "https://www.ncei.noaa.gov/pub/data/swdi/stormevents/csvfiles/"
+
+
+def noaa():
+    """NOAA Storm Events: file names, columns, and New Mexico events with deaths in two sample years."""
+    import csv
+    import gzip
+
+    listing = requests.get(NOAA_DIR, headers=UA, timeout=120).text
+    files = sorted(set(re.findall(r'href="(StormEvents_(?:details|fatalities)-ftp_v1\.0_d(\d{4})_c\d+\.csv\.gz)"', listing)))
+    years = sorted({y for _f, y in files})
+    print(f"NOAA files: {len(files)}; years {years[:2]}..{years[-2:]}")
+    for want in ("2023", years[-1]):
+        f = next((f for f, y in files if y == want and "details" in f), None)
+        if not f:
+            continue
+        rows = list(csv.DictReader(io.StringIO(gzip.decompress(requests.get(NOAA_DIR + f, headers=UA, timeout=300).content).decode("latin-1"))))
+        nm = [r for r in rows if r.get("STATE") == "NEW MEXICO"]
+        dead = [r for r in nm if int(r.get("DEATHS_DIRECT") or 0) + int(r.get("DEATHS_INDIRECT") or 0) > 0]
+        print(f"{f}: {len(rows)} events, {len(nm)} NM, {len(dead)} NM with deaths; columns {list(rows[0])}")
+        for r in dead[:4]:
+            print("  ", {k: r.get(k) for k in ("EVENT_ID", "BEGIN_YEARMONTH", "BEGIN_DAY", "EVENT_TYPE", "CZ_NAME", "BEGIN_LOCATION",
+                                               "BEGIN_LAT", "BEGIN_LON", "DEATHS_DIRECT", "DEATHS_INDIRECT")})
+    # all years: how many NM deaths in total (counts only)
+    tot = ev = gps = 0
+    for f, y in files:
+        if "details" not in f:
+            continue
+        txt = gzip.decompress(requests.get(NOAA_DIR + f, headers=UA, timeout=300).content).decode("latin-1")
+        for r in csv.DictReader(io.StringIO(txt)):
+            if r.get("STATE") == "NEW MEXICO":
+                n = int(r.get("DEATHS_DIRECT") or 0) + int(r.get("DEATHS_INDIRECT") or 0)
+                if n:
+                    ev += 1
+                    tot += n
+                    gps += bool(r.get("BEGIN_LAT"))
+    print(f"NOAA all years: {ev} New Mexico events with deaths ({tot} deaths), {gps} with a GPS point")
+    for y in (2025, 2024):
+        u = f"https://static.nhtsa.gov/nhtsa/downloads/FARS/{y}/National/FARS{y}NationalCSV.zip"
+        print("FARS", y, requests.head(u, headers=UA, timeout=60).status_code)
+
+
+NTSB = "https://data.ntsb.gov/avdata/FileDirectory/DownloadFile?fileID=C%3A%5Cavdata%5C{name}"
+
+
+def ntsb():
+    """NTSB aviation accidents (Access database): tables + New Mexico fatal accidents (needs mdbtools)."""
+    import csv
+    import os
+    import subprocess
+    import tempfile
+
+    for name in ("avall.zip", "Pre2008.zip"):
+        r = requests.get(NTSB.format(name=name), headers=UA, timeout=600)
+        print(f"{name}: {r.status_code}, {len(r.content) / 1e6:.0f} MB, {r.headers.get('content-type')}")
+        if r.status_code != 200:
+            continue
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        print("  files:", z.namelist())
+        mdb = next((n for n in z.namelist() if n.lower().endswith((".mdb", ".accdb"))), None)
+        if not mdb:
+            continue
+        d = tempfile.mkdtemp()
+        path = z.extract(mdb, d)
+        print("  tables:", subprocess.run(["mdb-tables", "-1", path], capture_output=True, text=True).stdout.split()[:40])
+        out = subprocess.run(["mdb-export", path, "events"], capture_output=True, text=True).stdout
+        rows = list(csv.DictReader(io.StringIO(out)))
+        nm = [x for x in rows if (x.get("ev_state") or "").upper() == "NM"]
+        fatal = [x for x in nm if int(float(x.get("inj_tot_f") or 0)) > 0]
+        print(f"  events: {len(rows)}, NM {len(nm)}, NM fatal {len(fatal)}; columns {list(rows[0])[:60] if rows else None}")
+        for x in fatal[:3]:
+            print("   ", {k: x.get(k) for k in ("ev_id", "ev_date", "ev_city", "ev_site_zip", "latitude", "longitude",
+                                               "dec_latitude", "dec_longitude", "inj_tot_f", "ev_highest_injury")})
+        os.remove(path)
+
+
 if __name__ == "__main__":
-    {"fra": fra, "msha": msha, "news": news, "archive": archive}[sys.argv[1]]()
+    {"fra": fra, "msha": msha, "news": news, "archive": archive, "noaa": noaa, "ntsb": ntsb}[sys.argv[1]]()
