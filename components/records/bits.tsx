@@ -8,13 +8,15 @@ import type { Cause, GeoPrecision, RecordType } from "@/lib/types";
 
 export const TYPE_COLORS: Record<RecordType, string> = {
   death: "#5E6B78",
+  road_death: "#9A5B3C",
   fire: "#B08A47",
   drug_lab: "#7A6780",
   flood_zone: "#4F7FA0",
 };
 
-export const TYPE_SHAPES: Record<RecordType, "circle" | "triangle" | "diamond" | "square"> = {
+export const TYPE_SHAPES: Record<RecordType, "circle" | "triangle" | "diamond" | "square" | "hexagon"> = {
   death: "circle",
+  road_death: "hexagon",
   fire: "triangle",
   drug_lab: "diamond",
   flood_zone: "square",
@@ -33,6 +35,7 @@ export function ShapeIcon({ shape, color, size = 14, hollow = false }: { shape: 
       {shape === "triangle" && <path d="M8 2 14.5 13.5h-13Z" {...common} strokeLinejoin="round" />}
       {shape === "diamond" && <path d="M8 1.5 14.5 8 8 14.5 1.5 8Z" {...common} strokeLinejoin="round" />}
       {shape === "square" && <rect x="2.5" y="2.5" width="11" height="11" rx="2" {...common} />}
+      {shape === "hexagon" && <path d="M8 1.5 13.6 4.75v6.5L8 14.5 2.4 11.25v-6.5Z" {...common} strokeLinejoin="round" />}
     </svg>
   );
 }

@@ -90,6 +90,13 @@ export const demoRepo: Repo = {
       }));
   },
 
+  async cityEvents(city, f) {
+    return events
+      .filter((e) => e.precision === "city" && e.city.toLowerCase() === city.toLowerCase() && passesFilters(e, f))
+      .map((e) => item(e, 0))
+      .sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+  },
+
   async cityDecades(f) {
     const buckets = new Map<string, { county: string; city: string; decade: number; n: number; lats: number[]; lngs: number[] }>();
     for (const e of events) {
@@ -110,6 +117,12 @@ export const demoRepo: Repo = {
       lat: b.lats.reduce((a, c) => a + c, 0) / b.lats.length,
       lng: b.lngs.reduce((a, c) => a + c, 0) / b.lngs.length,
     }));
+  },
+
+  async eventSummaries(ids, locale) {
+    const out: Record<string, string> = {};
+    for (const e of events) if (ids.includes(e.id)) out[e.id] = locale === "es" ? e.summaryEs : e.summary;
+    return out;
   },
 
   async eventDetail(id, full, locale) {

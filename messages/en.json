@@ -45,7 +45,7 @@
     "searched": "We searched {sources, plural, =1 {# source} other {# sources}} covering {from}–{to} for {county} County, as of {date}.",
     "searchedGeneric": "Searched our sources as of {date}.",
     "gapNote": "Newspaper coverage from 1964–2010 is thin, so missing records don't mean nothing happened.",
-    "naturalHidden": "{count, plural, =1 {# natural-cause record} other {# natural-cause records}} hidden by default.",
+    "naturalHidden": "{count, plural, =1 {# natural-cause record} other {# natural-cause records}} hidden.",
     "show": "Show",
     "hide": "Hide",
     "cityOnly": "{count, plural, =1 {# {city} record has} other {# {city} records have}} only a city-level location, so we can't place {count, plural, =1 {it} other {them}} on a street.",
@@ -57,7 +57,12 @@
     "atThisAddress": "At this address",
     "nearbyHeading": "Nearby",
     "builtIn": "The building on this lot was built in {year}.",
-    "olderThanBuilding": "{count, plural, =1 {# record here is older than it and may refer to an earlier building on the lot.} other {# records here are older than it and may refer to an earlier building on the lot.}}"
+    "olderThanBuilding": "{count, plural, =1 {# record here is older than it and may refer to an earlier building on the lot.} other {# records here are older than it and may refer to an earlier building on the lot.}}",
+    "townShow": "Show records placed only in {city}",
+    "townHeading": "{count, plural, =1 {# record} other {# records}} placed only in {city} (exact spot unknown)",
+    "townLoading": "Loading {city} records…",
+    "townNone": "No town-level records in {city} yet.",
+    "townFailed": "Couldn't load those records. Try again in a moment."
   },
   "record": {
     "distance": "{distance} away",
@@ -90,6 +95,7 @@
   },
   "types": {
     "death": "Reported death",
+    "road_death": "Fatal traffic crash",
     "fire": "Structure fire",
     "drug_lab": "Former drug lab site",
     "flood_zone": "Flood zone"

@@ -43,10 +43,50 @@ function toItem(x: any): CheckItem {
   };
 }
 
-async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-  const { data, error } = await serviceClient().rpc(fn, args);
-  if (error) throw new Error(`${fn}: ${error.message}`);
-  return data as T;
+type RpcError = { message?: string; code?: string; details?: string; hint?: string };
+
+/**
+ * One line that says what actually went wrong. A gateway or proxy error (502/503/504, or an
+ * HTML error page) reaches supabase-js with an empty message, which used to log as just
+ * "ap_api_free_check: " with nothing after it. The HTTP status, PostgREST code, details and
+ * hint now go in too.
+ */
+function describeRpcError(fn: string, error: RpcError, status: number, statusText: string): string {
+  const parts = [`HTTP ${status || "no response"}${statusText ? ` ${statusText}` : ""}`];
+  if (error.code) parts.push(`code ${error.code}`);
+  const msg = error.message?.trim() || "(empty message: likely a gateway or network error, not SQL)";
+  let line = `${fn}: ${msg} [${parts.join(", ")}]`;
+  if (error.details) line += ` details: ${String(error.details).slice(0, 300)}`;
+  if (error.hint) line += ` hint: ${String(error.hint).slice(0, 200)}`;
+  return line;
+}
+
+/** Gateway/transport failures are worth one retry; a PostgREST/SQL error (it has a code) is not. */
+function isTransient(error: RpcError, status: number): boolean {
+  if (error.code) return false;
+  if (status === 0 || status === 502 || status === 503 || status === 504) return true;
+  return !error.message || /fetch failed|network|timeout|timed out|econnreset|econnrefused|abort/i.test(error.message);
+}
+
+/**
+ * Calls a Postgres function. Read-only calls retry once after a short pause on a transient
+ * failure (a BaaS restart or deploy blip). Writes pass { retry: false } so nothing runs twice.
+ */
+async function rpc<T>(fn: string, args: Record<string, unknown>, opts: { retry?: boolean } = {}): Promise<T> {
+  const attempts = opts.retry === false ? 1 : 2;
+  let message = `${fn}: failed`;
+  for (let i = 0; i < attempts; i++) {
+    const { data, error, status, statusText } = await serviceClient().rpc(fn, args);
+    if (!error) return data as T;
+    message = describeRpcError(fn, error, status, statusText);
+    if (i + 1 < attempts && isTransient(error, status)) {
+      console.warn(`[rpc] retrying after transient error: ${message}`);
+      await new Promise((r) => setTimeout(r, 400));
+      continue;
+    }
+    break;
+  }
+  throw new Error(message);
 }
 
 export const supabaseRepo: Repo = {
@@ -59,8 +99,12 @@ export const supabaseRepo: Repo = {
     const r: FreeCheck = {
       parcelMatched: Boolean(d.parcel_matched),
       parcelYearBuilt: d.parcel_year_built ?? null,
-      atAddress: (d.at_address ?? []).map(toItem),
-      nearby: (d.nearby ?? []).map(toItem),
+      // A crash on the road in front of a lot is "nearby", never "at this address".
+      atAddress: (d.at_address ?? []).map(toItem).filter((i: CheckItem) => i.recordType !== "road_death"),
+      nearby: [
+        ...(d.at_address ?? []).map(toItem).filter((i: CheckItem) => i.recordType === "road_death"),
+        ...(d.nearby ?? []).map(toItem),
+      ],
       cityOnlyCount: Number(d.city_only_count ?? 0),
       coverage: toCoverage(d.coverage),
       asOf: d.as_of ?? null,
@@ -86,11 +130,51 @@ export const supabaseRepo: Repo = {
     }));
   },
 
+  async cityEvents(city, f) {
+    let q = serviceClient()
+      .from("ap_events")
+      .select("id,event_year,date_precision,record_type,cause_category,geocode_precision,verified,building_level,confidence")
+      .eq("hidden", false)
+      .eq("geocode_precision", "city")
+      .ilike("city", city)
+      .in("record_type", f.recordTypes)
+      .gte("confidence", f.minConfidence ?? 0)
+      .order("event_year", { ascending: true, nullsFirst: false })
+      .limit(500);
+    if (f.causes) q = q.in("cause_category", f.causes);
+    if (!f.includeNatural) q = q.neq("cause_category", "natural");
+    if (f.verifiedOnly) q = q.eq("verified", true);
+    const { data, error } = await q;
+    if (error) throw new Error(`cityEvents: ${error.message}`);
+    return (data ?? []).map<CheckItem>((x: any) => ({
+      id: x.id, year: x.event_year, datePrecision: x.date_precision, recordType: x.record_type, cause: x.cause_category,
+      precision: x.geocode_precision, verified: Boolean(x.verified), distanceM: 0,
+      buildingLevel: Boolean(x.building_level), predatesBuilding: false,
+    }));
+  },
+
   async cityDecades(f) {
     const rows = await rpc<any[]>("ap_api_city_decades", filterArgs(f));
     return rows.map<CityBucket>((x) => ({
       county: x.county, city: x.city, decade: x.decade, n: Number(x.n), lng: x.lng, lat: x.lat,
     }));
+  },
+
+  async eventSummaries(ids, locale) {
+    const out: Record<string, string> = {};
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await serviceClient()
+        .from("ap_events")
+        .select("id,summary,summary_es")
+        .in("id", ids.slice(i, i + 200))
+        .eq("hidden", false);
+      if (error) throw new Error(`eventSummaries: ${error.message}`);
+      for (const x of (data ?? []) as { id: string; summary: string | null; summary_es: string | null }[]) {
+        const s = locale === "es" ? x.summary_es || x.summary : x.summary;
+        if (s) out[x.id] = s;
+      }
+    }
+    return out;
   },
 
   async eventDetail(id, full, locale) {
@@ -121,7 +205,7 @@ export const supabaseRepo: Repo = {
   async requestRemoval(r) {
     const d = await rpc<any>("ap_api_request_removal", {
       p_event_id: r.eventId, p_email: r.email, p_relationship: r.relationship, p_reason: r.reason, p_details: r.details,
-    });
+    }, { retry: false });
     return { ok: Boolean(d?.ok), fastLane: Boolean(d?.fast_lane) };
   },
 

@@ -16,12 +16,13 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "harvest | nightly | batches | parcels"
+        description: "harvest | nightly | batches | parcels | publish (release spot-check holds, re-place, then nightly) | stats (counts only) | fars-inspect | fars (load NHTSA fatal crashes) | public-deaths (FRA crossings, MSHA mines, NTSB air crashes, NOAA weather) | dedupe-sweep (merge duplicates already on the map) | fars-old (NHTSA crashes 1975-2000, town level) | quality (list records that aren't deaths) | quality-apply (hide them)"
         required: true
         default: nightly
 
 concurrency:
-  group: pipeline
+  # One AddressPast database job at a time: the shared BaaS server has 1 GB of RAM (it ran out on Oct 26).
+  group: addresspast-db
   cancel-in-progress: false
 
 jobs:
@@ -29,7 +30,7 @@ jobs:
     # Job-level gate: skipped scheduled runs never start a runner (0 billed minutes).
     if: github.event_name != 'schedule' || vars.PIPELINE_LIVE == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -56,20 +57,71 @@ jobs:
         run: |
           set -e
           .github/scripts/run.sh rss-harvest python -m pipeline.harvest --rss --max-cost 1
-          .github/scripts/run.sh geocode python -m pipeline.geocode
+          .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 20
           .github/scripts/run.sh historic-geo python -m pipeline.historic_geo --limit 100
 
-      - name: Nightly dedupe
-        if: steps.db.outputs.ok == 'true' && (github.event.schedule == '37 8 * * *' || inputs.job == 'nightly')
+      - name: Release spot-check holds and re-place records
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'publish'
         run: |
           set -e
-          .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh release python -m pipeline.release
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode-retry python -m pipeline.geocode --recheck-towns --max-minutes 20
+
+      - name: Nightly dedupe
+        if: steps.db.outputs.ok == 'true' && (github.event.schedule == '37 8 * * *' || inputs.job == 'nightly' || inputs.job == 'publish')
+        run: |
+          set -e
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500 --max-minutes 30
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 30
           .github/scripts/run.sh translate python -m pipeline.translate --limit 500
           .github/scripts/run.sh parcel-match python -m pipeline.parcels match
 
       - name: Collect batches
         if: steps.db.outputs.ok == 'true' && (github.event.schedule == '17 */3 * * *' || inputs.job == 'batches')
         run: .github/scripts/run.sh batches python -m pipeline.batches poll
+
+      - name: FARS (look at the file layout)
+        if: inputs.job == 'fars-inspect'
+        run: |
+          for y in 2001 2005 2007; do NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-inspect-$y python -m pipeline.fars inspect $y; done
+
+      - name: FARS fatal crashes (load, then publish)
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'fars'
+        run: |
+          set -e
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars python -m pipeline.fars load --from 2000 --to 2024
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 100 --max-minutes 45
+
+      - name: Records that are not a death (list, or hide with quality-apply)
+        if: steps.db.outputs.ok == 'true' && (inputs.job == 'quality' || inputs.job == 'quality-apply')
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality ${{ inputs.job == 'quality-apply' && '--apply' || '' }}
+
+      - name: FARS 1975-2000 (town level, then place and publish)
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'fars-old'
+        run: |
+          set -e
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh fars-old python -m pipeline.fars load-old --from 1975 --to 2000
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 30
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 100 --max-minutes 40
+
+      - name: Merge duplicates already on the map
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'dedupe-sweep'
+        run: |
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality --apply || true
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 100
+
+      - name: Railroad, mine, air-crash and weather deaths (load, then publish)
+        if: steps.db.outputs.ok == 'true' && inputs.job == 'public-deaths'
+        run: |
+          set -e
+          sudo apt-get install -y -qq mdbtools >/dev/null
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh public-deaths python -m pipeline.public_deaths all
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 15
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 300 --max-minutes 30
+
+      - name: Record counts
+        if: steps.db.outputs.ok == 'true' && (inputs.job == 'stats' || inputs.job == 'publish' || inputs.job == 'fars' || inputs.job == 'public-deaths' || inputs.job == 'dedupe-sweep' || inputs.job == 'fars-old')
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
 
       - name: Load Bernalillo parcels (by hand)
         if: steps.db.outputs.ok == 'true' && inputs.job == 'parcels'

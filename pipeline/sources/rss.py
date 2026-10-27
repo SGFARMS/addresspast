@@ -105,6 +105,31 @@ def fetch_article_text(url: str, session: requests.Session) -> str:
     return html_to_text(r.text)
 
 
+# Crawlers whose opt-out we treat as "no AI reading of this site": if an outlet's robots.txt turns
+# any of these (or us) away from the whole site, we skip it entirely, feed and archive alike.
+AI_AGENTS = ("ClaudeBot", "Claude-User", "Claude-Web", "anthropic-ai", "AddressPast-harvester")
+_robots_cache: dict[str, bool] = {}
+
+
+def ai_allowed(url: str, session: requests.Session | None = None) -> bool:
+    """False when the site's robots.txt blocks AI readers (or us) from the site, or can't be read."""
+    from urllib.robotparser import RobotFileParser
+
+    site = "/".join(url.split("/")[:3])
+    if site not in _robots_cache:
+        rp = RobotFileParser()
+        try:
+            r = (session or new_session()).get(site + "/robots.txt", timeout=30)
+            if r.status_code >= 500:
+                _robots_cache[site] = False
+                return False
+            rp.parse(r.text.splitlines() if r.status_code == 200 else [])
+            _robots_cache[site] = all(rp.can_fetch(a, site + "/") and rp.can_fetch(a, url) for a in AI_AGENTS)
+        except requests.RequestException:
+            _robots_cache[site] = False
+    return _robots_cache[site]
+
+
 def new_session() -> requests.Session:
     s = requests.Session()
     s.headers["User-Agent"] = USER_AGENT

@@ -1,10 +1,10 @@
-export type RecordType = "death" | "fire" | "drug_lab" | "flood_zone";
+export type RecordType = "death" | "road_death" | "fire" | "drug_lab" | "flood_zone";
 export type Cause = "natural" | "accident" | "homicide" | "suicide" | "fire" | "unknown";
 export type GeoPrecision = "street" | "street_historic" | "intersection" | "landmark" | "city";
 export type DatePrecision = "day" | "month" | "year" | "decade";
 export type Bbox = [west: number, south: number, east: number, north: number];
 
-export const RECORD_TYPES: RecordType[] = ["death", "fire", "drug_lab", "flood_zone"];
+export const RECORD_TYPES: RecordType[] = ["death", "road_death", "fire", "drug_lab", "flood_zone"];
 export const CAUSES: Cause[] = ["accident", "homicide", "suicide", "fire", "natural", "unknown"];
 export const APPROXIMATE: GeoPrecision[] = ["street_historic", "intersection", "landmark"];
 
@@ -51,6 +51,9 @@ export interface CheckItem {
   buildingLevel: boolean;
   /** The record is older than the building now on the lot. */
   predatesBuilding: boolean;
+  /** One-line neutral description ("A fatal mining accident at a surface mine was recorded."), name-scrubbed.
+   *  Only filled in while features.paywall is off (lib/data/previews.ts). */
+  summary?: string | null;
 }
 
 export interface Coverage {

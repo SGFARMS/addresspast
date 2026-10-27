@@ -3,8 +3,8 @@
 #          extract_limit 150 = also extract 150 candidates into records.csv for a spot-check.
 # live:    writes to the BaaS tenant. Spend is capped across all runs by AP_HARVEST_CAP_USD ($20).
 # Results: the run summary, plus the "harvest-out" artifact (records.csv, stats.json, ...).
-# Backlog autopilot: while pipeline/BACKFILL_ON exists, a live Chronicling America run starts every
-# 6 hours and continues where the last one stopped (--resume) until the whole range is done.
+# Backlog autopilot: while pipeline/BACKFILL_ON exists, a live bulk-OCR run starts every 6 hours and reads
+# the New Mexico batches it hasn't finished yet (whole batches of newspaper text, no search API).
 # The schedule is also gated at the job level by the repo variable HARVEST_BACKFILL: until it is
 # "true", a scheduled run is skipped before a runner starts (0 billed Actions minutes). Autopilot
 # on = add pipeline/BACKFILL_ON *and* set HARVEST_BACKFILL to true. Manual runs are never gated.
@@ -16,11 +16,11 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: "loc (Chronicling America) or rss"
+        description: "bulk (Chronicling America bulk OCR, fastest), loc (search API) or rss"
         required: true
-        default: loc
+        default: bulk
         type: choice
-        options: [loc, rss]
+        options: [bulk, loc, rss]
       mode:
         description: "dry-run (no database) or live"
         required: true
@@ -43,17 +43,24 @@ on:
         description: "USD cap for this run"
         default: "20"
       scope:
-        description: "loc: local (papers printed in ABQ/Belen/Los Lunas/Bernalillo) or state (every NM paper)"
+        description: "loc: state (every NM paper) or local (papers printed in ABQ/Belen/Los Lunas/Bernalillo)"
         required: true
-        default: local
+        default: state
         type: choice
-        options: [local, state]
+        options: [state, local]
       max_pages:
         description: "stop after this many newspaper pages (0 = no limit)"
         default: "0"
+      hold_for_review:
+        description: "live: hold every new record in /admin until approved (spot-check)"
+        required: true
+        default: "no"
+        type: choice
+        options: ["yes", "no"]
 
 concurrency:
-  group: harvest
+  # One AddressPast database job at a time: the shared BaaS server has 1 GB of RAM (it ran out on Oct 26).
+  group: addresspast-db
   cancel-in-progress: false
 
 jobs:
@@ -67,6 +74,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       AP_HARVEST_CAP_USD: "20"
+      AP_HOLD_FOR_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.hold_for_review == 'yes' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -82,9 +90,12 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             if [ ! -f pipeline/BACKFILL_ON ]; then echo "Backlog autopilot is off (no pipeline/BACKFILL_ON)."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
             echo "mode=live" >> "$GITHUB_OUTPUT"
-            echo "args=--loc --resume --start-year 1860 --end-year 1963 --scope local --max-cost 20" >> "$GITHUB_OUTPUT"
+            echo "args=--bulk --start-year 1860 --end-year 1963 --max-cost 20" >> "$GITHUB_OUTPUT"
           else
             A="--${{ inputs.source }} --max-cost ${{ inputs.max_cost }}"
+            if [ "${{ inputs.source }}" = "bulk" ]; then
+              A="$A --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --max-pages ${{ inputs.max_pages }}"
+            fi
             if [ "${{ inputs.source }}" = "loc" ]; then
               A="$A --start-year ${{ inputs.start_year }} --end-year ${{ inputs.end_year }} --max-pages ${{ inputs.max_pages }} --scope ${{ inputs.scope }}"
               if [ "${{ inputs.start_page }}" = "resume" ]; then A="$A --resume"; else A="$A --start-page ${{ inputs.start_page }}"; fi
@@ -106,14 +117,35 @@ jobs:
       - name: Harvest
         if: steps.cfg.outputs.skip != 'true'
         # Stops cleanly before the job's 345-minute timeout so the summary and files are always written.
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest ${{ steps.cfg.outputs.args }} --max-minutes 320 --out harvest-out
+        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh harvest python -m pipeline.harvest ${{ steps.cfg.outputs.args }} --max-minutes 90 --out harvest-out
 
       - name: Geocode new records
-        if: steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
-        run: NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --limit 5000
+        if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
+        run: |
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode python -m pipeline.geocode --max-minutes 100
+          # Records no town was found for before the USGS place names (ghost towns) went in
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode-retry python -m pipeline.geocode --retry-failed --max-minutes 20
+          # Records left at their town although the article gives a street, corner or landmark: historic street
+          # pins, USGS landmarks (mines, cemeteries, schools...) and OpenStreetMap street corners
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh geocode-refine python -m pipeline.geocode --refine --max-minutes 60
+
+      - name: Publish new records
+        # Put this run's finds on the map now instead of waiting for the nightly job.
+        if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode == 'live'
+        run: |
+          set -e
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 6000 --max-minutes 50
+          # Then keep merging repeat articles already on the map (resumes where the last sweep stopped; the time
+          # left after reading, placing and publishing, which is most of a run now that the archive is read)
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 150 || true
+          # List stored records that turn out not to be a death (hidden only by the pipeline job quality-apply)
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality || true
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
 
       - uses: actions/upload-artifact@v5
-        if: always() && steps.cfg.outputs.skip != 'true'
+        # Dry runs only: a live run's records go to the database, and artifacts on a public repo can be
+        # downloaded by anyone signed in to GitHub.
+        if: always() && steps.cfg.outputs.skip != 'true' && steps.cfg.outputs.mode != 'live'
         with:
           name: harvest-out
           path: harvest-out/

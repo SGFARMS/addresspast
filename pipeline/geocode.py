@@ -1,16 +1,17 @@
-"""Geocode new incidents: Census Geocoder -> Photon -> town centroid.
+"""Geocode new incidents: Census Geocoder -> USGS names / OpenStreetMap -> town centroid.
 
-    python -m pipeline.geocode [--limit 2000]
+    python -m pipeline.geocode [--limit 2000] [--retry-failed] [--refine] [--recheck-towns]
 
 Rules (approximate locations are always labeled; nothing is placed more precisely than we know):
   - street_address, 1960 or later: US Census Geocoder. A match near the stated town -> precision 'street'.
-  - street_address before 1960: Albuquerque and other towns renamed streets and renumbered houses, so a modern
-    match may be the wrong lot. We store the Census candidate in matched_address for the reviewer, place the
-    record at the town (precision 'city', status 'fallback'), and historic_geo.py suggests a location for review.
-  - landmark: Photon (OSM). Accepted only if the result's name matches the landmark and it's near the town.
-  - intersection: placed at the town for now (status 'fallback'); a street-line intersection lookup comes later.
+  - street_address before 1960: the same Census match, but as precision 'street_historic' (shown on the street,
+    labeled approximate, never counted "at this address"): towns renamed streets and renumbered houses, so the
+    lot may differ. Known renames are applied first (Albuquerque's Railroad Avenue = Central Avenue).
+  - landmark: USGS GNIS features near the town (mines, cemeteries, schools, churches, camps), then Photon (OSM).
+    Accepted only if the name matches and it's near the town.
+  - intersection: where the two streets meet today in OpenStreetMap (Overpass), within 6 km of the town.
   - city_only, or anything that fails: the town centroid, precision 'city'.
-geocode_status: ok | fallback | failed (no recognizable pilot town).
+geocode_status: ok | fallback (left at the town) | failed (no New Mexico town).
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from .places_nm import Town, find_towns, town_by_name
+from .places_nm import NM_COUNTIES, NM_PLACE_NAMES, Town, find_towns, town_by_name
 
 CENSUS_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 PHOTON_URL = "https://photon.komoot.io/api/"
@@ -30,12 +31,14 @@ NM_BBOX = (-109.06, 31.33, -103.0, 37.0)
 USER_AGENT = "AddressPast-geocoder/1.0 (+https://history.skyhighwebsites.dev)"
 HISTORIC_BEFORE = 1960
 MAX_KM_FROM_TOWN = {"street": 25.0, "landmark": 15.0}
+# Every geocode run after this moment looks up USGS names (GNIS); --retry-failed re-tries failures from before it.
+GNIS_SINCE = "2026-10-27T08:00:00Z"
 
 _session = requests.Session()
 _session.headers["User-Agent"] = USER_AGENT
 _cache: dict[str, object] = {}
-_last_call = {"census": 0.0, "photon": 0.0}
-_MIN_GAP = {"census": 0.4, "photon": 1.0}
+_last_call = {"census": 0.0, "photon": 0.0, "overpass": 0.0}
+_MIN_GAP = {"census": 0.4, "photon": 1.0, "overpass": 2.0}
 
 
 def _pace(name: str):
@@ -74,13 +77,16 @@ def census(address: str) -> tuple[float, float, str] | None:
     return hit
 
 
-def photon(query: str) -> dict | None:
-    key = "p:" + query.lower()
+def photon(query: str, places_only: bool = False) -> dict | None:
+    key = ("pp:" if places_only else "p:") + query.lower()
     if key in _cache:
         return _cache[key]  # type: ignore[return-value]
     _pace("photon")
     try:
-        r = _session.get(PHOTON_URL, params={"q": query, "limit": 1, "lang": "en", "bbox": ",".join(map(str, NM_BBOX))}, timeout=30)
+        params = {"q": query, "limit": 1, "lang": "en", "bbox": ",".join(map(str, NM_BBOX))}
+        if places_only:
+            params["osm_tag"] = "place"  # towns and villages only, not a same-named street or building
+        r = _session.get(PHOTON_URL, params=params, timeout=30)
         r.raise_for_status()
         feats = r.json().get("features") or []
     except (requests.RequestException, ValueError):
@@ -102,22 +108,244 @@ def name_matches(wanted: str, got: str) -> bool:
     return bool(a) and len(a & b) / len(a) >= 0.5
 
 
-def resolve_town(row: dict) -> Town | None:
-    t = town_by_name(row.get("city"))
-    if t:
-        return t
-    found = find_towns(f"{row.get('address_raw') or ''} {row.get('city') or ''}")
-    return found[0] if found else None
+_PLACE_KINDS = {"city", "town", "village", "hamlet", "locality", "suburb", "neighbourhood", "isolated_dwelling"}
 
 
-def geocode_row(row: dict) -> dict:
+_KNOWN_NM = {n.lower() for n in NM_PLACE_NAMES}
+_NM_COUNTY_NAMES = set(NM_COUNTIES)
+
+
+def _norm_county(c: str | None) -> str:
+    """'Doña Ana County' / 'Dona Ana' / 'DeBaca' all compare equal to their usual spelling."""
+    c = (c or "").replace(" County", "").replace(" county", "").strip().lower().replace("ñ", "n")
+    return {"debaca": "de baca"}.get(c, c)
+
+
+def plausibly_nm(city: str, county: str | None) -> bool:
+    """Is this record really about a New Mexico town? Papers carried wire news from everywhere, and some
+    out-of-state names exist as tiny NM spots too ("New York" in Cibola County). Accept a statewide
+    match only for a well-known NM town, or when the record itself names a New Mexico county."""
+    if city.strip().lower() in _KNOWN_NM:
+        return True
+    return _norm_county(county) in _NM_COUNTY_NAMES
+
+
+def nm_town(name: str | None, county: str | None = None, recheck: bool = False, trusted: bool = False) -> Town | None:
+    """Any New Mexico town, looked up on Photon (OpenStreetMap), for places outside the pilot list.
+
+    recheck: the record was placed before, so its county may be one this geocoder filled in from
+    Photon itself; a county that merely repeats Photon's answer is then no evidence the place is in NM."""
+    if not name or not name.strip() or not (trusted or plausibly_nm(name, county)):
+        return None
+    key = "t:" + name.strip().lower()
+    if key in _cache:
+        town = _cache[key]
+    else:
+        town = None
+        f = photon(f"{name.strip()}, New Mexico", places_only=True)
+        if f:
+            lng, lat = f["geometry"]["coordinates"][:2]
+            props = f.get("properties") or {}
+            label = props.get("name") or ""
+            kind = props.get("osm_value") or props.get("type") or ""
+            if kind in _PLACE_KINDS and in_nm(lat, lng) and name_matches(name, label):
+                osm_county = (props.get("county") or "").replace(" County", "").strip()  # keep OSM's casing (McKinley)
+                town = Town(label, osm_county, float(lat), float(lng), ())
+        _cache[key] = town
+    if (recheck and not trusted and town and name.strip().lower() not in _KNOWN_NM
+            and _norm_county(county) == _norm_county(town.county)):
+        return None
+    return town  # type: ignore[return-value]
+
+
+def _county_name(c: str) -> str | None:
+    """Pilot towns carry lowercase slugs ("valencia"); statewide lookups keep OSM's casing ("McKinley")."""
+    if not c:
+        return None
+    return c if any(ch.isupper() for ch in c) else c.title()
+
+
+_LCCN_RE = re.compile(r"/resource/([a-z]{0,3}\d{6,12})/")
+
+
+def paper_town(source_url: str | None) -> str | None:
+    """The town a Chronicling America paper was printed in (from the page URL's LCCN)."""
+    m = _LCCN_RE.search(source_url or "")
+    if not m:
+        return None
+    from .sources.bulk_ocr import paper_info
+
+    cities = paper_info(m.group(1)).get("cities") or []
+    return cities[0].title() if cities else None
+
+
+# Counties New Mexico carved out of older ones (modern county -> counties its land used to belong to).
+# A record naming the older county for a town in the newer one is right for its time (Cubero, Valencia
+# County, 1910); a record naming an unrelated county (an Albuquerque pin for a Grant County item) is not.
+COUNTY_PARENTS = {
+    "cibola": {"valencia"}, "los alamos": {"sandoval", "santa fe"}, "catron": {"socorro"}, "harding": {"mora", "union"},
+    "lea": {"chaves", "eddy"}, "curry": {"quay", "roosevelt"}, "roosevelt": {"chaves", "guadalupe"},
+    "quay": {"guadalupe"}, "torrance": {"valencia", "lincoln", "bernalillo", "santa fe", "san miguel"},
+    "sandoval": {"bernalillo", "rio arriba"}, "mckinley": {"bernalillo", "valencia"},
+    "otero": {"doña ana", "dona ana", "lincoln", "socorro"}, "luna": {"grant", "doña ana", "dona ana"},
+    "sierra": {"socorro", "doña ana", "dona ana", "grant"}, "hidalgo": {"grant"},
+    "de baca": {"chaves", "guadalupe", "roosevelt"}, "debaca": {"chaves", "guadalupe", "roosevelt"},
+    "union": {"colfax", "mora", "san miguel"}, "san juan": {"rio arriba"}, "eddy": {"lincoln", "chaves"},
+    "chaves": {"lincoln"}, "guadalupe": {"san miguel"}, "grant": {"doña ana", "dona ana"}, "colfax": {"mora"},
+    "lincoln": {"socorro", "doña ana", "dona ana"}, "valencia": {"bernalillo"},
+}
+
+
+def county_fits(record_county: str | None, town_county: str | None) -> bool:
+    """False only when the record names a New Mexico county that the town has never belonged to."""
+    rc, tc = _norm_county(record_county), _norm_county(town_county)
+    if not rc or not tc or rc not in _NM_COUNTY_NAMES or rc == tc:
+        return True
+    return rc in COUNTY_PARENTS.get(tc, set()) or tc in COUNTY_PARENTS.get(rc, set())
+
+
+_COUNTY_PHRASE = re.compile(r"\b[\w ]{0,20}?\b(?:county|co\.)\b|\bcondado\s+de\s+\w+", re.I)
+
+
+def _gnis(name: str | None, county: str | None) -> Town | None:
+    """USGS names first (ghost towns, camps, forts; no web request), Photon only when GNIS has nothing."""
+    from .gnis import gnis_town
+
+    try:
+        return gnis_town(name, county, county_fits)
+    except Exception as e:
+        print(f"gnis lookup skipped: {type(e).__name__}", flush=True)
+        return None
+
+
+def _gnis_landmark(addr: str, town: Town) -> dict | None:
+    """A mine, cemetery, school, church, camp... from USGS names, near the town."""
+    from .gnis import landmark_near
+
+    try:
+        f = landmark_near(addr, town.lat, town.lng, MAX_KM_FROM_TOWN["landmark"])
+    except Exception as e:
+        print(f"gnis landmark skipped: {type(e).__name__}", flush=True)
+        return None
+    if not f or f.get("cls") == "populated place" and f["name"].lower() == town.name.lower():
+        return None  # the town itself is no more precise than the town
+    return {"lat": round(f["lat"], 6), "lng": round(f["lng"], 6), "geocode_precision": "landmark", "geocode_source": "gnis",
+            "geocode_status": "ok", "matched_address": f"{f['name']} ({f['cls']}, USGS)"}
+
+
+# Streets renamed since the papers were printed (town -> [(old, today's)]), so the Census can find them.
+_RENAMED = {"albuquerque": [(r"\brailroad\s+(avenue|ave\.?|av\.?)", "Central Avenue")]}
+
+
+def modern_street_names(addr: str, town: str) -> str:
+    for old, new in _RENAMED.get(town.lower(), []):
+        addr = re.sub(old, new, addr, flags=re.I)
+    return addr
+
+
+_ORDINALS = {"first": "1st", "second": "2nd", "third": "3rd", "fourth": "4th", "fifth": "5th", "sixth": "6th",
+             "seventh": "7th", "eighth": "8th", "ninth": "9th", "tenth": "10th", "eleventh": "11th", "twelfth": "12th",
+             "thirteenth": "13th", "fourteenth": "14th", "fifteenth": "15th", "sixteenth": "16th"}
+_STREET_WORDS = r"(street|st\.?|avenue|ave\.?|av\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|place|pl\.?)"
+
+
+def _street_core(part: str) -> str | None:
+    """'North Fourth street' -> '4th'; 'Gold avenue' -> 'gold'; 'Central' -> 'central'."""
+    p = re.sub(r"\b(north|south|east|west|n\.|s\.|e\.|w\.|corner\s+of|the|at|on)\b", " ", part.lower())
+    p = re.sub(r"\b" + _STREET_WORDS + r"\b", " ", p)
+    p = re.sub(r"[^a-z0-9 ]", " ", p).split()
+    if not p:
+        return None
+    w = " ".join(p[:2]) if len(p) > 1 and p[0] not in _ORDINALS else p[0]
+    return _ORDINALS.get(w, w)
+
+
+def _split_corner(addr: str, town: str = "") -> tuple[str, str] | None:
+    m = re.split(r"\s+(?:and|&|y|at|near)\s+|\s*/\s*", modern_street_names(addr, town), maxsplit=1, flags=re.I)
+    if len(m) != 2:
+        return None
+    a, b = _street_core(m[0]), _street_core(m[1])
+    return (a, b) if a and b and a != b else None
+
+
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+
+def intersection(addr: str, town: Town) -> tuple[float, float, str] | None:
+    """Where two named streets meet today, from OpenStreetMap (one Overpass query, within 6 km of town)."""
+    pair = _split_corner(addr, town.name)
+    if not pair:
+        return None
+    key = f"x:{town.name}:{pair[0]}:{pair[1]}"
+    if key in _cache:
+        return _cache[key]  # type: ignore[return-value]
+
+    def rx(core: str) -> str:
+        num = re.match(r"^(\d+)(st|nd|rd|th)$", core)
+        word = next((k for k, v in _ORDINALS.items() if v == core), None)
+        alts = [re.escape(core)] + ([word] if word else []) + ([num.group(1) + "(st|nd|rd|th)"] if num else [])
+        return "^(.* )?(" + "|".join(alts) + ")( |$)"
+
+    q = (f'[out:json][timeout:25];way(around:6000,{town.lat},{town.lng})["highway"]["name"~"{rx(pair[0])}",i]->.a;'
+         f'way(around:6000,{town.lat},{town.lng})["highway"]["name"~"{rx(pair[1])}",i]->.b;'
+         f'node(w.a)->.na;node(w.b)->.nb;node.na.nb;out 5;')
+    _pace("overpass")
+    try:
+        r = _session.post(OVERPASS_URL, data={"data": q}, timeout=60)
+        r.raise_for_status()
+        nodes = r.json().get("elements") or []
+    except (requests.RequestException, ValueError):
+        return None  # not cached: retried next run
+    hit = None
+    if nodes:
+        lat = sum(n["lat"] for n in nodes) / len(nodes)
+        lng = sum(n["lon"] for n in nodes) / len(nodes)
+        if in_nm(lat, lng) and km(lat, lng, town.lat, town.lng) <= 6:
+            hit = (round(lat, 6), round(lng, 6), f"{pair[0]} & {pair[1]} (OpenStreetMap, today's streets)")
+    _cache[key] = hit
+    return hit
+
+
+def resolve_town(row: dict, recheck: bool = False) -> Town | None:
+    """Find the town for a record.
+
+    1. The record's own town: the built-in pilot list (with OCR variants), then USGS place names (GNIS,
+       ghost towns included), then anywhere in NM via Photon.
+    2. A pilot town named in the address text ("county" phrases removed, so "Valencia county" isn't the
+       village of Valencia).
+    3. No town at all: a local item, so the town the paper was printed in (trusted as New Mexico).
+    """
+    city = (row.get("city") or "").strip()
+    if city:
+        t = town_by_name(city) or _gnis(city, row.get("county")) or nm_town(city, row.get("county"), recheck)
+        if t and county_fits(row.get("county"), t.county):
+            return t
+        if t:
+            return None  # the town says one county, the record another: don't guess (Albuquerque pin for Grant County)
+    address = _COUNTY_PHRASE.sub(" ", row.get("address_raw") or "")
+    found = find_towns(address)
+    if found:
+        return found[0]
+    if not city:
+        town_from_paper = paper_town(row.get("source_url"))
+        if town_from_paper:
+            t = (town_by_name(town_from_paper) or _gnis(town_from_paper, row.get("county"))
+                 or nm_town(town_from_paper, row.get("county"), recheck, trusted=True))
+            # An Albuquerque paper's item about Grant County is not in Albuquerque.
+            return t if t and county_fits(row.get("county"), t.county) else None
+    return None
+
+
+def geocode_row(row: dict, recheck: bool = False) -> dict:
     """Return the ap_incidents update for one row (pure apart from the HTTP lookups)."""
     now = datetime.now(timezone.utc).isoformat()
-    town = resolve_town(row)
+    town = resolve_town(row, recheck)
     if not town:
-        return {"geocode_status": "failed", "geocode_source": None, "geocoded_at": now}
+        # Clear any earlier placement so a re-check can take a wrong pin off the map.
+        return {"geocode_status": "failed", "geocode_source": None, "geocoded_at": now,
+                "lat": None, "lng": None, "geocode_precision": None}
 
-    base = {"city": row.get("city") or town.name, "county": row.get("county") or town.county.title(), "geocoded_at": now}
+    base = {"city": row.get("city") or town.name, "county": row.get("county") or _county_name(town.county), "geocoded_at": now}
     at_town = {**base, "lat": town.lat, "lng": town.lng, "geocode_precision": "city", "geocode_source": "town_centroid"}
     precision = row.get("location_precision")
     year = row.get("incident_year")
@@ -125,15 +353,30 @@ def geocode_row(row: dict) -> dict:
     addr = (row.get("address_raw") or "").strip()
 
     if precision == "street_address" and addr:
-        hit = census(f"{addr}, {town.name}, NM")
+        hit = census(f"{modern_street_names(addr, town.name)}, {town.name}, NM")
         if hit and in_nm(hit[0], hit[1]) and km(hit[0], hit[1], town.lat, town.lng) <= MAX_KM_FROM_TOWN["street"]:
             if historic:
-                return {**at_town, "geocode_status": "fallback", "matched_address": f"census candidate (unverified for {year}): {hit[2]}"}
+                # Right street, maybe not the right lot (towns renumbered houses), so a "historic street"
+                # pin: shown on the street, labeled approximate, never counted "at this address".
+                return {**base, "lat": hit[0], "lng": hit[1], "geocode_precision": "street_historic",
+                        "geocode_source": "census_historic", "geocode_status": "ok",
+                        "matched_address": f"today's {hit[2]} (street of {year}; house numbers may have changed)"}
             return {**base, "lat": hit[0], "lng": hit[1], "geocode_precision": "street", "geocode_source": "census",
+                    "geocode_status": "ok", "matched_address": hit[2]}
+        lm = _gnis_landmark(addr, town)  # "the Alvarado hotel, First street": a named building may still be found
+        return lm or {**at_town, "geocode_status": "fallback"}
+
+    if precision == "intersection" and addr:
+        hit = intersection(addr, town)
+        if hit:
+            return {**base, "lat": hit[0], "lng": hit[1], "geocode_precision": "intersection", "geocode_source": "osm_intersection",
                     "geocode_status": "ok", "matched_address": hit[2]}
         return {**at_town, "geocode_status": "fallback"}
 
     if precision == "landmark" and addr:
+        lm = _gnis_landmark(addr, town)
+        if lm:
+            return lm
         f = photon(f"{addr}, {town.name}, New Mexico")
         if f:
             lng, lat = f["geometry"]["coordinates"][:2]
@@ -148,40 +391,71 @@ def geocode_row(row: dict) -> dict:
                         "geocode_status": "ok", "matched_address": label}
         return {**at_town, "geocode_status": "fallback"}
 
-    if precision == "intersection":
-        return {**at_town, "geocode_status": "fallback"}
-
     return {**at_town, "geocode_status": "ok"}  # city_only: the town is exactly what we know
 
 
-def main(limit: int):
-    from .common.db import db
+def _select(retry_failed: bool, recheck_towns: bool, after_id: int, page: int, refine: bool = False):
+    from .common.db import db, retry
+
+    q = db().table("ap_incidents").select("id,address_raw,city,county,location_precision,incident_year,event_id,source_url")
+    if recheck_towns:
+        # Re-place every town-level record with the current rules (fixes earlier wrong statewide matches).
+        q = q.or_("geocode_status.is.null,geocode_status.eq.failed,geocode_precision.eq.city")
+    elif refine:
+        # Records left at the town although their text has a street, corner or landmark: try again with
+        # today's rules (historic street pins, USGS landmarks, street corners).
+        q = q.eq("geocode_status", "fallback")
+    elif retry_failed:
+        # Records that found no town before the USGS names (GNIS) went in; ones that failed since already had them.
+        q = q.or_(f"geocode_status.is.null,and(geocode_status.eq.failed,geocoded_at.lt.{GNIS_SINCE})")
+    else:
+        q = q.is_("geocode_status", "null")
+    return q.eq("hidden", False).gt("id", after_id).order("id").limit(page).execute().data or []
+
+
+def main(limit: int, retry_failed: bool = False, recheck_towns: bool = False, max_minutes: float = 40, refine: bool = False):
+    """Place records, a page at a time (the API returns at most 1,000 rows per request) until none are
+    left, `limit` is reached or `max_minutes` pass. Paging by id, so a re-check never loops."""
+    from .common.db import db, retry
     from .common.runlog import PipelineRun
 
-    rows = (
-        db().table("ap_incidents")
-        .select("id,address_raw,city,county,location_precision,incident_year")
-        .is_("geocode_status", "null")
-        .eq("hidden", False)
-        .order("id")
-        .limit(limit)
-        .execute()
-        .data
-    )
     counts: dict[str, int] = {}
+    done = 0
+    last_id = 0
+    t0 = time.monotonic()
     with PipelineRun("geocode") as run:
-        for r in rows:
-            run.items_in += 1
-            upd = geocode_row(r)
-            db().table("ap_incidents").update(upd).eq("id", r["id"]).execute()
-            k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
-            counts[k] = counts.get(k, 0) + 1
-            run.items_out += 1 if upd["geocode_status"] == "ok" else 0
+        while done < limit and (time.monotonic() - t0) / 60 < max_minutes:
+            rows = retry(lambda: _select(retry_failed, recheck_towns, last_id, min(1000, limit - done), refine))
+            if not rows:
+                break
+            for r in rows:
+                last_id = r["id"]
+                run.items_in += 1
+                upd = geocode_row(r, recheck=recheck_towns)
+                retry(lambda: db().table("ap_incidents").update(upd).eq("id", r["id"]).execute())
+                if r.get("event_id"):
+                    if upd["geocode_status"] == "failed":
+                        # No New Mexico town after all: detach it, so its event loses this record (and is hidden
+                        # if nothing else backs it). If it's placed later, dedupe gives it a fresh event.
+                        retry(lambda: db().table("ap_incidents").update({"event_id": None}).eq("id", r["id"]).execute())
+                    # Move (or remove) the event to match.
+                    retry(lambda: db().rpc("ap_refresh_event", {"p_event_id": r["event_id"]}).execute())
+                k = f"{upd['geocode_status']}/{upd.get('geocode_precision') or '-'}"
+                counts[k] = counts.get(k, 0) + 1
+                run.items_out += 1 if upd["geocode_status"] == "ok" else 0
+                done += 1
+                if (time.monotonic() - t0) / 60 >= max_minutes:
+                    break
         run.meta = {"counts": counts}
-    print("geocoded", len(rows), counts)
+    print("geocoded", done, counts)
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--limit", type=int, default=2000)
-    main(ap.parse_args().limit)
+    ap.add_argument("--limit", type=int, default=100000)
+    ap.add_argument("--max-minutes", type=float, default=40)
+    ap.add_argument("--retry-failed", action="store_true", help="also retry records that found no town before")
+    ap.add_argument("--recheck-towns", action="store_true", help="re-place every town-level record with the current rules")
+    ap.add_argument("--refine", action="store_true", help="re-try records left at their town (status fallback) for a street, corner or landmark")
+    a = ap.parse_args()
+    main(a.limit, a.retry_failed, a.recheck_towns, a.max_minutes, a.refine)

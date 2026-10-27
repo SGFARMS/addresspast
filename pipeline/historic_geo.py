@@ -10,6 +10,7 @@ import argparse
 
 from anthropic import Anthropic
 
+from .common.ai import create_with_tool, tool_input
 from .common.config import MODEL_SMART
 from .common.db import db
 from .common.runlog import PipelineRun
@@ -57,16 +58,19 @@ def main(limit: int):
             if exists:
                 continue
             run.items_in += 1
-            msg = client.messages.create(
+            msg = create_with_tool(
+                client,
+                "suggest",
                 model=MODEL_SMART,
                 max_tokens=300,
                 system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 tools=[TOOL],
-                tool_choice={"type": "tool", "name": "suggest"},
                 messages=[{"role": "user", "content": f"Address as printed: {r['address_raw']}\nTown: {r['city']}, {r['county']} County, NM\nYear: {r['incident_year']}\nSummary: {r['summary']}"}],
             )
             run.ai("historic_geo", MODEL_SMART, msg.usage)
-            s = next(b for b in msg.content if b.type == "tool_use").input
+            s = tool_input(msg)
+            if s is None:
+                continue
             if s.get("found") and s.get("lat") and s.get("lng"):
                 db().table("ap_location_suggestions").insert({
                     "incident_id": r["id"], "suggested_lat": s["lat"], "suggested_lng": s["lng"],

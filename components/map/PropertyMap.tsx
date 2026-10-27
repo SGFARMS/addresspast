@@ -37,7 +37,7 @@ interface Props {
   onCity: (city: string, lat: number, lng: number) => void;
 }
 
-type Shape = "circle" | "triangle" | "diamond" | "square";
+type Shape = "circle" | "triangle" | "diamond" | "square" | "hexagon";
 
 /** Draw a marker icon on a canvas so each record type gets its own shape. */
 function makeIcon(shape: Shape, color: string, hollow: boolean, px = 2) {
@@ -54,6 +54,14 @@ function makeIcon(shape: Shape, color: string, hollow: boolean, px = 2) {
   if (shape === "triangle") { g.moveTo(11, 3); g.lineTo(19, 18); g.lineTo(3, 18); g.closePath(); }
   if (shape === "diamond") { g.moveTo(11, 2.5); g.lineTo(19.5, 11); g.lineTo(11, 19.5); g.lineTo(2.5, 11); g.closePath(); }
   if (shape === "square") { g.roundRect(4, 4, 14, 14, 3); }
+  if (shape === "hexagon") {
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 3;
+      const [x, y] = [11 + 8.2 * Math.cos(a), 11 + 8.2 * Math.sin(a)];
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.closePath();
+  }
   if (!hollow) g.fill();
   else { g.fillStyle = "rgba(255,255,255,0.85)"; g.fill(); }
   g.stroke();

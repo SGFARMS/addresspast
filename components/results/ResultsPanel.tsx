@@ -19,6 +19,7 @@ interface Props {
   error: string | null;
   includeNatural: boolean;
   onlyDeaths: boolean;
+  recordTypes: string[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onToggleNatural: (on: boolean) => void;
@@ -58,7 +59,7 @@ function CheckSkeleton({ label }: { label: string }) {
   );
 }
 
-function FreeCheckCard({ check, includeNatural, onlyDeaths, onSelect, onToggleNatural, place }: Props & { check: FreeCheck }) {
+function FreeCheckCard({ check, includeNatural, onlyDeaths, recordTypes, onSelect, onToggleNatural, place }: Props & { check: FreeCheck }) {
   const t = useTranslations("check");
   const locale = useLocale();
   const radius = metersLabel(siteConfig.check.nearbyRadiusM, locale);
@@ -104,7 +105,7 @@ function FreeCheckCard({ check, includeNatural, onlyDeaths, onSelect, onToggleNa
             {t("hide")}
           </button>
         )}
-        {check.cityOnlyCount > 0 && place.city && (
+        {check.cityOnlyCount > 0 && place.city && place.kind !== "area" && (
           <p className="mt-2 flex gap-1.5 text-sm text-ink-2">
             <Info size={16} className="mt-0.5 shrink-0" aria-hidden />
             {t("cityOnly", { count: check.cityOnlyCount, city: place.city })}
@@ -124,8 +125,57 @@ function FreeCheckCard({ check, includeNatural, onlyDeaths, onSelect, onToggleNa
 
       {at.length > 0 && <RecordList title={t("atThisAddress")} items={at} onSelect={onSelect} />}
       {near.length > 0 && <RecordList title={t("nearbyHeading")} items={near} onSelect={onSelect} showDistance />}
+      {place.city && (check.cityOnlyCount > 0 || place.kind === "area") && (
+        <TownRecords
+          city={place.city}
+          autoOpen={place.kind === "area"}
+          includeNatural={includeNatural}
+          recordTypes={recordTypes}
+          onSelect={onSelect}
+        />
+      )}
     </>
   );
+}
+
+/** Records placed only at town level ("Gallup, 1912"): a list behind a button, or open straight away
+ *  when the person tapped the town's badge on the map. */
+function TownRecords({ city, autoOpen, includeNatural, recordTypes, onSelect }: {
+  city: string; autoOpen: boolean; includeNatural: boolean; recordTypes: string[]; onSelect: (id: string) => void;
+}) {
+  const t = useTranslations("check");
+  const locale = useLocale();
+  const [open, setOpen] = useState(autoOpen);
+  const [items, setItems] = useState<CheckItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const key = `${city}|${includeNatural}|${recordTypes.join(",")}`;
+
+  useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    setItems(null);
+    setFailed(false);
+    const qs = new URLSearchParams({ city, natural: includeNatural ? "1" : "0", types: recordTypes.join(","), locale });
+    fetch(`/api/city?${qs}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { items: CheckItem[] }) => setItems(j.items))
+      .catch((e: Error) => { if (e.name !== "AbortError") setFailed(true); });
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, key, locale]);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => { track("town_list_open"); setOpen(true); }}
+        className="self-start rounded-xl border border-line bg-surface px-3 py-2 text-sm font-medium hover:border-accent">
+        {t("townShow", { city })}
+      </button>
+    );
+  }
+  if (failed) return <p role="alert" className="rounded-xl bg-adobe-soft p-3 text-sm">{t("townFailed")}</p>;
+  if (!items) return <CheckSkeleton label={t("townLoading", { city })} />;
+  if (items.length === 0) return <p className="text-sm text-ink-2">{t("townNone", { city })}</p>;
+  return <RecordList title={t("townHeading", { city, count: items.length })} items={items} onSelect={onSelect} />;
 }
 
 function RecordList({ title, items, onSelect, showDistance }: { title: string; items: CheckItem[]; onSelect: (id: string) => void; showDistance?: boolean }) {
@@ -150,6 +200,7 @@ function RecordList({ title, items, onSelect, showDistance }: { title: string; i
                   <span className="text-ink-2">{l.category(i.recordType, i.cause)}</span>
                   {i.recordType === "death" && <span className="sr-only">{l.type(i.recordType)}</span>}
                 </span>
+                {i.summary && <span className="mt-1 line-clamp-2 block text-sm leading-snug text-ink-2">{i.summary}</span>}
                 <span className="mt-1.5 flex flex-wrap items-center gap-2">
                   <PrecisionBadge precision={i.precision} />
                   {i.verified && <VerifiedBadge />}
