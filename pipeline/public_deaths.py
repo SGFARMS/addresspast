@@ -291,6 +291,7 @@ def noaa_rows() -> list[dict]:
             kind = (e.get("EVENT_TYPE") or "weather event").strip().lower()
             # "3W ALBUQUERQUE" / "(ABQ)ALBUQUERQUE INTL" -> "Albuquerque"
             place = _title(re.sub(r"^\d+(\.\d+)?\s*[NSEW]{1,3}\s+|^\([A-Z0-9]+\)", "", (e.get("BEGIN_LOCATION") or "").strip()))
+            place = re.sub(r"\s+(Intl|Arpt|Airport|Muni|Rgnl)\b.*$", "", place or "").strip() or None
             county = _title(e.get("CZ_NAME")) if (e.get("CZ_TYPE") or "").upper() == "C" else None
             near = f" near {place}" if place else (f" in {county} County" if county else "")
             row = {
