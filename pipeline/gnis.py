@@ -32,7 +32,7 @@ CLASS_RANK = {"populated place": 0, "military": 1, "locale": 2, "mine": 3, "post
 # A record naming one of these without a New Mexico county is taken to be about the famous one.
 _ELSEWHERE = {
     "el paso", "juarez", "ciudad juarez", "chicago", "denver", "pueblo", "trinidad", "colorado springs",
-    "kansas city", "los angeles", "new york", "washington", "phoenix", "tucson", "dallas", "fort worth",
+    "kansas city", "los angeles", "new york", "new york city", "brooklyn", "washington", "phoenix", "tucson", "dallas", "fort worth",
     "amarillo", "san antonio", "houston", "st. louis", "saint louis", "topeka", "omaha", "salt lake city",
     "san francisco", "oakland", "sacramento", "san diego", "portland", "seattle", "boston", "philadelphia",
     "baltimore", "pittsburgh", "cleveland", "detroit", "cincinnati", "st. paul", "minneapolis", "milwaukee",
@@ -113,15 +113,16 @@ def _km(a, b) -> float:
 def gnis_town(name: str | None, county: str | None = None, county_fits=None) -> Town | None:
     """A New Mexico place by name (ghost towns too). With a county, only places that fit it (county_fits,
     which knows old county lines); without one, only when the best matches all sit within 25 km of each
-    other, and never for a famous out-of-state city name."""
+    other; never for a famous out-of-state city name."""
     key = _norm(name or "")
     if not key or len(key) < 3:
         return None
     hits = index().get(key) or []
+    if key in _ELSEWHERE:
+        # Even with a county: on a re-check the county may be one an earlier lookup wrote onto the record.
+        return None
     if county and county_fits:
         hits = [h for h in hits if county_fits(county, h[2])]
-    elif key in _ELSEWHERE:
-        return None
     if not hits:
         return None
     best = min(h[0] for h in hits)
