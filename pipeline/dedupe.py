@@ -246,25 +246,43 @@ def check_incident_safe(run, r: dict) -> int:
         return 0
 
 
-def _sweep_start() -> int:
+def _sweep_meta() -> dict:
+    """What the last sweep run recorded: where to resume, and how the current/last pass went."""
     rows = retry(lambda: db().table("ap_pipeline_runs").select("meta").eq("job", "dedupe_sweep")
                  .order("started_at", desc=True).limit(1).execute().data) or []
-    return int(((rows[0].get("meta") or {}) if rows else {}).get("last_id") or 0)
+    return (rows[0].get("meta") or {}) if rows else {}
 
 
-def sweep(max_minutes: float):
+def _sweep_start() -> int:
+    return int(_sweep_meta().get("last_id") or 0)
+
+
+def sweep(max_minutes: float, weekly: bool = False):
     """Go back over every published death record (oldest first, resuming where the last sweep stopped)
-    and merge duplicates the publish step never got to. Wraps around when it reaches the end."""
+    and merge duplicates the publish step never got to. Wraps around when it reaches the end.
+
+    weekly=True (the scheduled runs): sweep_policy.py decides whether it's time. A pass under way always
+    continues; a finished pass waits a week; a pass that finds no duplicates ends the cleanup for good.
+    Manual runs (the dedupe-sweep job) always sweep."""
+    from .sweep_policy import next_meta, skip_reason
+
+    prev = _sweep_meta()
+    why = skip_reason(prev) if weekly else None
+    if why:
+        print(f"dedupe sweep: skipped, {why}", flush=True)
+        return
     t0 = time.monotonic()
     with PipelineRun("dedupe_sweep") as run:
-        last = _sweep_start()
+        last = int(prev.get("last_id") or 0)
         checked = merges = 0
+        wrapped = False
         while (time.monotonic() - t0) / 60 < max_minutes:
             rows = retry(lambda: db().table("ap_incidents").select(FIELDS)
                          .eq("record_type", "death").eq("hidden", False).not_.is_("event_id", "null")
                          .gt("id", last).order("id").limit(200).execute().data) or []
             if not rows:
                 last = 0  # start over next time
+                wrapped = True  # a full pass is done
                 break
             for r in rows:
                 try:
@@ -278,7 +296,7 @@ def sweep(max_minutes: float):
                 if (time.monotonic() - t0) / 60 >= max_minutes:
                     break
         run.items_in, run.items_out = checked, merges
-        run.meta = {"last_id": last}
+        run.meta = next_meta(prev, last, merges, wrapped)
     print(f"dedupe sweep: checked {checked} records, merged {merges} duplicates (next start after id {last}); "
           f"AI cost ${run.cost:.2f}")
 
@@ -304,5 +322,6 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=500)
     ap.add_argument("--max-minutes", type=float, default=40, help="stop publishing new events after this long")
     ap.add_argument("--sweep", action="store_true", help="go back over already-published records for duplicates")
+    ap.add_argument("--weekly", action="store_true", help="sweep only if it's due (one pass a week, none once clean)")
     a = ap.parse_args()
-    sweep(a.max_minutes) if a.sweep else main(a.limit, a.max_minutes)
+    sweep(a.max_minutes, weekly=a.weekly) if a.sweep else main(a.limit, a.max_minutes)
