@@ -73,7 +73,8 @@ jobs:
         run: |
           set -e
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe python -m pipeline.dedupe --limit 500 --max-minutes 30
-          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 30
+          # --weekly: one pass a week at most, none once a pass finds no duplicates (pipeline/sweep_policy.py)
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --weekly --max-minutes 30
           .github/scripts/run.sh translate python -m pipeline.translate --limit 500
           .github/scripts/run.sh parcel-match python -m pipeline.parcels match
 
