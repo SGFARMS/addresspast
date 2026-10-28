@@ -168,4 +168,4 @@ jobs:
         with:
           name: harvest-out
           path: harvest-out/
-          retention-days: 30
+          retention-days: 7
