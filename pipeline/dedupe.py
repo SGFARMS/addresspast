@@ -247,13 +247,19 @@ def check_incident_safe(run, r: dict) -> int:
 
 
 def _sweep_meta() -> dict:
-    """What the last sweep run recorded: where to resume, and how the current/last pass went."""
+    """What the most recent finished sweep recorded: where to resume, and how the current/last pass went
+    (runs that died before saving a position are skipped)."""
     rows = retry(lambda: db().table("ap_pipeline_runs").select("meta").eq("job", "dedupe_sweep")
-                 .order("started_at", desc=True).limit(1).execute().data) or []
-    return (rows[0].get("meta") or {}) if rows else {}
+                 .order("started_at", desc=True).limit(10).execute().data) or []
+    for r in rows:
+        meta = r.get("meta") or {}
+        if "last_id" in meta:
+            return meta
+    return {}
 
 
 def _sweep_start() -> int:
+    """Where the most recent finished sweep stopped (runs that died before saving a position are skipped)."""
     return int(_sweep_meta().get("last_id") or 0)
 
 
@@ -272,8 +278,11 @@ def sweep(max_minutes: float, weekly: bool = False):
         print(f"dedupe sweep: skipped, {why}", flush=True)
         return
     t0 = time.monotonic()
+    # Read where the last sweep stopped BEFORE this run logs itself: read after, the newest sweep row was
+    # this run's own (no position yet), so every sweep restarted from the first record (fixed Oct 28).
+    last = _sweep_start()
+    print(f"dedupe sweep: starting after id {last}", flush=True)
     with PipelineRun("dedupe_sweep") as run:
-        last = int(prev.get("last_id") or 0)
         checked = merges = 0
         wrapped = False
         while (time.monotonic() - t0) / 60 < max_minutes:
