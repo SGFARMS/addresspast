@@ -69,6 +69,9 @@ jobs:
     if: github.event_name != 'schedule' || vars.HARVEST_BACKFILL != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 345
+    permissions:
+      contents: read
+      actions: write   # lets a finished backlog switch this workflow's schedule off (gh workflow disable)
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -89,6 +92,13 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             if [ ! -f pipeline/BACKFILL_ON ]; then echo "Backlog autopilot is off (no pipeline/BACKFILL_ON)."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+            # Nothing left to read: stop here (no 3-hour run) and switch the 6-hourly schedule off below.
+            left=$(python -m pipeline.bulk_left | tail -n 1) || left="?"
+            if [ "$left" = "0" ]; then
+              echo "No New Mexico batches left to read: the backlog is done."
+              echo "skip=true" >> "$GITHUB_OUTPUT"; echo "finished=true" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            echo "New Mexico batches left to read: $left"
             echo "mode=live" >> "$GITHUB_OUTPUT"
             echo "args=--bulk --start-year 1860 --end-year 1963 --max-cost 20" >> "$GITHUB_OUTPUT"
           else
@@ -105,6 +115,14 @@ jobs:
             echo "args=$A" >> "$GITHUB_OUTPUT"
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Backlog done, switch the 6-hourly schedule off
+        if: steps.cfg.outputs.finished == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow disable harvest.yml --repo "$GITHUB_REPOSITORY"
+          echo "::notice::Every New Mexico batch is read, so the 6-hourly harvest switched itself off. Nightly publishing and the weekly duplicate sweep keep running in pipeline.yml. To turn it back on: Actions > harvest > Enable workflow."
 
       - name: Check secrets
         if: steps.cfg.outputs.skip != 'true'
@@ -136,8 +154,9 @@ jobs:
           set -e
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh publish python -m pipeline.dedupe --limit 6000 --max-minutes 50
           # Then keep merging repeat articles already on the map (resumes where the last sweep stopped; the time
-          # left after reading, placing and publishing, which is most of a run now that the archive is read)
-          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --max-minutes 150 || true
+          # left after reading, placing and publishing). --weekly: a pass under way continues, a finished pass
+          # waits a week, and once a pass finds no duplicates the sweep stops for good (pipeline/sweep_policy.py).
+          NOTICE_ON_SUCCESS=1 .github/scripts/run.sh dedupe-sweep python -m pipeline.dedupe --sweep --weekly --max-minutes 150 || true
           # List stored records that turn out not to be a death (hidden only by the pipeline job quality-apply)
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh quality python -m pipeline.quality || true
           NOTICE_ON_SUCCESS=1 .github/scripts/run.sh counts python -m pipeline.stats
@@ -149,4 +168,4 @@ jobs:
         with:
           name: harvest-out
           path: harvest-out/
-          retention-days: 30
+          retention-days: 7
