@@ -203,4 +203,8 @@ export const demoRepo: Repo = {
   async logAiUsage(u) {
     console.info(`[ai] ${u.feature} ${u.model} in=${u.inputTokens} out=${u.outputTokens} $${u.costUsd.toFixed(5)}`);
   },
+
+  async aiSpendSince() {
+    return 0;
+  },
 };

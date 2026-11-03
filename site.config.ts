@@ -96,6 +96,9 @@ export const siteConfig = {
       ask: true,
       areaSummary: true,
     },
+    /** Site-side AI (Ask box + area summaries) stops calling Claude for the rest of the UTC day once logged spend
+     *  reaches this many USD; the free rule-based parser and cached/template summaries take over. Pipeline jobs have their own caps. */
+    dailyCapUsd: 2,
   },
 
   // ── Pricing (Phase 3) ────────────────────────────────────────────────

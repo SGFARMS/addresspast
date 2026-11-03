@@ -2,7 +2,7 @@ import "server-only";
 import { siteConfig } from "@/site.config";
 import { suggestPlaces } from "@/lib/places";
 import { CAUSES, RECORD_TYPES, type AskResult, type Cause, type RecordType } from "@/lib/types";
-import { anthropic, hasAI, logUsage } from "./client";
+import { anthropic, hasAI, logUsage, siteAiBudgetOk } from "./client";
 
 /**
  * "Ask in plain English": turn a question into structured map filters.
@@ -107,7 +107,7 @@ export function parseWithRules(qRaw: string): Parsed {
 export async function ask(q: string): Promise<AskResult> {
   let parsed: Parsed;
   let via: AskResult["via"] = "rules";
-  if (hasAI() && siteConfig.ai.features.ask) {
+  if (hasAI() && siteConfig.ai.features.ask && (await siteAiBudgetOk())) {
     try {
       parsed = await parseWithClaude(q);
       via = "claude";

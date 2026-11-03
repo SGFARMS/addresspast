@@ -4,7 +4,7 @@ import { siteConfig } from "@/site.config";
 import { repo } from "@/lib/data";
 import { scrubNames } from "@/lib/scrub/names";
 import type { AreaStats } from "@/lib/types";
-import { anthropic, hasAI, logUsage } from "./client";
+import { anthropic, hasAI, logUsage, siteAiBudgetOk } from "./client";
 
 /**
  * Short overview for county/city pages, written ONLY from aggregate stats
@@ -39,7 +39,7 @@ export async function getAreaSummary(args: {
   const hash = statsHash(stats);
   const cached = await repo().getAreaSummary(county, city ?? "", locale);
   if (cached && cached.statsHash === hash) return cached.body;
-  if (!args.generate || !hasAI() || !siteConfig.ai.features.areaSummary) return cached?.body ?? fallback(area, stats, locale);
+  if (!args.generate || !hasAI() || !siteConfig.ai.features.areaSummary || !(await siteAiBudgetOk())) return cached?.body ?? fallback(area, stats, locale);
 
   const model = siteConfig.ai.models.fast;
   const msg = await anthropic().messages.create({

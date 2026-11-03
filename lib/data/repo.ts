@@ -37,4 +37,6 @@ export interface Repo {
   saveAreaSummary(row: { county: string; city: string; locale: string; body: string; statsHash: string; model: string }): Promise<void>;
   logScrubHits(hits: ScrubHit[]): Promise<void>;
   logAiUsage(u: AiUsage): Promise<void>;
+  /** Total logged AI spend (USD) for the given features since an ISO timestamp. May stop counting early once `stopAt` is reached. */
+  aiSpendSince(features: string[], sinceIso: string, stopAt?: number): Promise<number>;
 }

@@ -262,4 +262,17 @@ export const supabaseRepo: Repo = {
       cache_read_tokens: u.cacheReadTokens ?? 0, cache_write_tokens: u.cacheWriteTokens ?? 0, cost_usd: u.costUsd,
     });
   },
+
+  async aiSpendSince(features, sinceIso, stopAt = Infinity) {
+    let total = 0;
+    for (let from = 0; from < 50_000; from += 1000) {
+      const { data, error } = await serviceClient()
+        .from("ap_ai_usage").select("cost_usd").in("feature", features).gte("created_at", sinceIso).range(from, from + 999);
+      if (error) throw new Error(`aiSpendSince: ${error.message}`);
+      const rows = data ?? [];
+      total += rows.reduce((s: number, r: any) => s + Number(r.cost_usd ?? 0), 0);
+      if (total >= stopAt || rows.length < 1000) break;
+    }
+    return total;
+  },
 };
