@@ -18,7 +18,7 @@ import time
 
 import requests
 
-from .common.db import db
+from .common.db import db, retry
 from .common.runlog import PipelineRun
 
 
@@ -103,12 +103,17 @@ def load(county: str, path: str, apn_field: str, situs_field: str | None, chunk:
             })
             run.items_in += 1
             if len(batch) >= chunk:
-                db().table("ap_parcels").upsert(batch).execute()
+                b = batch
+                retry(lambda: db().table("ap_parcels").upsert(b).execute())  # idempotent: safe to repeat
                 run.items_out += len(batch)
                 batch = []
+                if run.items_out % 20000 < chunk:
+                    print(f"  {county}: {run.items_out} parcels saved", flush=True)
         if batch:
-            db().table("ap_parcels").upsert(batch).execute()
+            b = batch
+            retry(lambda: db().table("ap_parcels").upsert(b).execute())
             run.items_out += len(batch)
+        print(f"{county}: {run.items_out} parcels saved of {seen} read", flush=True)
         # A run that loads nothing must fail, not look like a success in the run history.
         if seen == 0:
             raise ParcelSourceError(f"{county}: the source returned no parcels at all (moved or empty layer?)")
