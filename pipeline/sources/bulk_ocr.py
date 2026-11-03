@@ -65,8 +65,10 @@ def nm_batches() -> list[dict]:
 def paper_info(lccn: str) -> dict:
     """Title, city and languages for one newspaper (cached; one small request per paper)."""
     info = {"title": None, "cities": [], "languages": []}
-    for url, params in ((f"https://chroniclingamerica.loc.gov/lccn/{lccn}.json", None),
-                        (f"https://www.loc.gov/item/{lccn}/", {"fo": "json"})):
+    # loc.gov is the supported address (the standalone chroniclingamerica.loc.gov API was retired in 2025).
+    # The legacy address stays only as a last resort, tried after loc.gov, so a gap in loc.gov's answer loses nothing.
+    for url, params in ((f"https://www.loc.gov/item/{lccn}/", {"fo": "json"}),
+                        (f"https://chroniclingamerica.loc.gov/lccn/{lccn}.json", None)):
         try:
             time.sleep(1.0)
             d = _get_json(url, params)
