@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { siteConfig } from "@/site.config";
 import { repo } from "@/lib/data";
+import { createBudgetGate } from "./budget-gate";
 
 let client: Anthropic | null = null;
 
@@ -13,6 +14,13 @@ export function anthropic() {
   if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   return client;
 }
+
+/** True while today's site-side AI spend (Ask box + area summaries) is under siteConfig.ai.dailyCapUsd. */
+export const siteAiBudgetOk = createBudgetGate({
+  capUsd: siteConfig.ai.dailyCapUsd,
+  getSpend: (sinceIso, stopAt) => repo().aiSpendSince(["ask", "area_summary"], sinceIso, stopAt),
+  onError: (e) => console.error("[ai] daily budget check failed; using free fallback", e),
+});
 
 interface Usage {
   input_tokens?: number | null;
