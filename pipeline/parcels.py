@@ -42,8 +42,11 @@ def to_multipolygon_wkt(geom: dict) -> str | None:
 # Public ArcGIS layers we can page through directly (id field, situs field, optional year-built field).
 ARCGIS_SOURCES = {
     "bernalillo": {
-        "url": "https://gismap.bernco.gov/arcgis/rest/services/Public_Permits/MapServer/15/query",
-        "apn": "UPC", "situs": "SITUSADD", "year_built": None,
+        # NM Office of the State Engineer statewide layer (data from NMTRD / Bernalillo County Assessor), Bernalillo only,
+        # ~255k parcels incl. incorporated Albuquerque. Replaces the county Public_Permits service that no longer answers.
+        # We request only id, situs and shape: the layer also carries owner/mailing fields, which we never ask for or store.
+        "url": "https://gis.ose.nm.gov/server_s/rest/services/Parcels/County_Parcels_2025/MapServer/0/query",
+        "apn": "UPC", "situs": "SitusAddress1", "year_built": None,
     },
 }
 
@@ -94,7 +97,7 @@ def load(county: str, path: str, apn_field: str, situs_field: str | None, chunk:
                 continue
             batch.append({
                 "id": f"{county}:{apn}", "county": county, "apn": apn,
-                "situs_address": props.get(situs_field) if situs_field else None,
+                "situs_address": _clean(props.get(situs_field)) if situs_field else None,
                 "year_built": _year(props.get(year_built_field)) if year_built_field else None,
                 "geom": wkt, "source_url": source or path,
             })
@@ -112,6 +115,12 @@ def load(county: str, path: str, apn_field: str, situs_field: str | None, chunk:
         if run.items_out == 0:
             raise ParcelSourceError(
                 f"{county}: {seen} features came back but none had '{apn_field}' and a shape; field names may have changed")
+
+
+def _clean(v) -> str | None:
+    """Collapse stray whitespace (the state layer pads addresses); empty becomes None."""
+    out = " ".join(str(v).split()) if v is not None else ""
+    return out or None
 
 
 def _year(v) -> int | None:

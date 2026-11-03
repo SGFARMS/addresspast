@@ -26,6 +26,6 @@ Revert the squash commits on `main` (`git revert 06206a5 b0d5f5b 712086e`), or r
 ## Still open (Joe)
 1. **Upstash**: create a Redis database (Vercel integration) so `UPSTASH_REDIS_REST_URL` / `_TOKEN` exist. Until then use a long random `ADMIN_PASSWORD`.
 2. **Removal queue**: log in at `/admin` and check pending requests.
-3. **Parcel layer**: open the county layer in a browser, confirm live address and field names, then update `ARCGIS_SOURCES` in `pipeline/parcels.py`.
+3. **Parcel load**: source now points at the NM State Engineer statewide layer (Bernalillo only, 255,181 parcels, 254,793 with an address; fields `UPC`, `SitusAddress1`). Nothing has been loaded yet; run `python -m pipeline.parcels fetch bernalillo` after the PR merges, with your OK.
 4. **Idle scheduled runs**: set repo variables `HARVEST_BACKFILL` and `PIPELINE_LIVE` to `false` when making the repo private again.
 5. Chores: finish the duplicate sweep (stopped near 78%), switch repo back to private, delete `~/.ssh/github_ops` on the droplet, OSHA key (`DOL_API_KEY`), IPRA letters.

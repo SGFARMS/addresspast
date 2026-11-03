@@ -86,3 +86,18 @@ def test_error_body_with_http_200_fails(monkeypatch):
     monkeypatch.setattr(parcels.requests, "Session", lambda: Sess())
     with pytest.raises(parcels.ParcelSourceError, match="returned an error"):
         list(parcels.fetch_arcgis("bernalillo"))
+
+
+def test_clean_collapses_whitespace_and_empties():
+    from pipeline import parcels
+    assert parcels._clean("5704 Tinnin Rd Nw ") == "5704 Tinnin Rd Nw"
+    assert parcels._clean("2941  Madison St   Ne") == "2941 Madison St Ne"
+    assert parcels._clean("   ") is None
+    assert parcels._clean(None) is None
+
+
+def test_bernalillo_source_requests_no_owner_fields():
+    from pipeline import parcels
+    src = parcels.ARCGIS_SOURCES["bernalillo"]
+    assert "gis.ose.nm.gov" in src["url"]
+    assert not any("owner" in str(v).lower() or "mail" in str(v).lower() for v in src.values())
