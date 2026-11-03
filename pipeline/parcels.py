@@ -22,6 +22,10 @@ from .common.db import db
 from .common.runlog import PipelineRun
 
 
+class ParcelSourceError(RuntimeError):
+    """The parcel source answered, but not with usable parcels (moved layer, error body, renamed fields)."""
+
+
 def to_multipolygon_wkt(geom: dict) -> str | None:
     def ring(r):
         return "(" + ", ".join(f"{x} {y}" for x, y, *_ in r) + ")"
@@ -58,7 +62,11 @@ def fetch_arcgis(county: str, page: int = 1000):
             try:
                 r = s.get(src["url"], params=params, timeout=120)
                 r.raise_for_status()
-                feats = r.json().get("features") or []
+                data = r.json()
+                # ArcGIS reports many failures as HTTP 200 with an error body; don't mistake that for "no more pages".
+                if isinstance(data, dict) and data.get("error"):
+                    raise ParcelSourceError(f"{src['url']} returned an error: {str(data['error'])[:300]}")
+                feats = data.get("features") or []
                 break
             except (requests.RequestException, ValueError):
                 if attempt == 3:
@@ -76,7 +84,9 @@ def load(county: str, path: str, apn_field: str, situs_field: str | None, chunk:
     feats = features if features is not None else json.load(open(path, encoding="utf-8"))["features"]
     with PipelineRun("parcels", trigger="manual", meta={"county": county, "source": source or path}) as run:
         batch = []
+        seen = 0
         for f in feats:
+            seen += 1
             props = f.get("properties") or {}
             apn = str(props.get(apn_field) or "").strip()
             wkt = to_multipolygon_wkt(f.get("geometry") or {})
@@ -96,6 +106,12 @@ def load(county: str, path: str, apn_field: str, situs_field: str | None, chunk:
         if batch:
             db().table("ap_parcels").upsert(batch).execute()
             run.items_out += len(batch)
+        # A run that loads nothing must fail, not look like a success in the run history.
+        if seen == 0:
+            raise ParcelSourceError(f"{county}: the source returned no parcels at all (moved or empty layer?)")
+        if run.items_out == 0:
+            raise ParcelSourceError(
+                f"{county}: {seen} features came back but none had '{apn_field}' and a shape; field names may have changed")
 
 
 def _year(v) -> int | None:
