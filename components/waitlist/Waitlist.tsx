@@ -39,6 +39,7 @@ export function Waitlist() {
       <footer className="border-t border-line px-5 py-6 text-center text-xs text-ink-3">
         <p>{f("pilot")}</p>
         <p className="mt-1">{f("rights")}</p>
+        <p className="mt-1"><a href="https://skyhighwebsites.dev/?utm_source=addresspast&utm_medium=footer-credit&utm_campaign=client-site" rel="noopener">Website by Sky High Websites</a></p>
       </footer>
     </div>
   );
