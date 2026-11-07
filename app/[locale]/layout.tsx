@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { Public_Sans, Source_Serif_4 } from "next/font/google";
@@ -73,6 +74,8 @@ export default async function LocaleLayout({ children, params }: { children: Rea
         />
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
         <Analytics />
+        {/* Holiday theme: follows the switch in the Sky High studio. Remove this line to turn it off for this site. */}
+        <Script src="https://skyhighwebsites.dev/api/public/holiday" strategy="afterInteractive" data-brand="AddressPast" />
       </body>
     </html>
   );
