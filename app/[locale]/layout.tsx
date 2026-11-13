@@ -76,6 +76,8 @@ export default async function LocaleLayout({ children, params }: { children: Rea
         <Analytics />
         {/* Holiday theme: follows the switch in the Sky High studio. Remove this line to turn it off for this site. */}
         <Script src="https://skyhighwebsites.dev/api/public/holiday" strategy="afterInteractive" data-brand="AddressPast" />
+        {/* Sky High Alerts: page errors that hit 5+ visitors in an hour reach the studio. Remove this line to turn it off for this site. */}
+        <Script src="https://skyhighwebsites.dev/alerts/browser.js" strategy="afterInteractive" />
         {/* Ideas & problems box: one shared script from the Sky High studio; messages land in its inbox. Remove this line to turn it off for this site. */}
         <Script src="https://skyhighwebsites.dev/api/public/feedback-widget" strategy="afterInteractive" data-brand="AddressPast" />
       </body>
