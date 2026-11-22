@@ -24,6 +24,10 @@ def main(limit: int):
         for r in rows:
             run.items_in += 1
             src, _ = scrub_names(r["summary"])
+            if not src.strip():
+                # Anthropic rejects empty messages; mark as done so it isn't picked up again.
+                db().table("ap_events").update({"summary_es": ""}).eq("id", r["id"]).execute()
+                continue
             msg = client.messages.create(
                 model=MODEL_FAST,
                 max_tokens=200,
