@@ -24,6 +24,9 @@ def main(limit: int):
         for r in rows:
             run.items_in += 1
             src, _ = scrub_names(r["summary"])
+            if not src.strip():
+                print(f"translate: skipped event id {r['id']} (blank summary)")
+                continue
             msg = client.messages.create(
                 model=MODEL_FAST,
                 max_tokens=200,
