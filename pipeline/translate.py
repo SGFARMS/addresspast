@@ -24,17 +24,24 @@ def main(limit: int):
         for r in rows:
             run.items_in += 1
             src, _ = scrub_names(r["summary"])
-            msg = client.messages.create(
-                model=MODEL_FAST,
-                max_tokens=200,
-                system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user", "content": src}],
-            )
-            run.ai("translate", MODEL_FAST, msg.usage)
-            es, _ = scrub_names("".join(b.text for b in msg.content if b.type == "text").strip())
-            if es:
-                db().table("ap_events").update({"summary_es": es}).eq("id", r["id"]).execute()
-                run.items_out += 1
+            if not src.strip():
+                # Blank text can't be translated; mark with "" so it isn't picked again (the site falls back to English).
+                db().table("ap_events").update({"summary_es": ""}).eq("id", r["id"]).execute()
+                continue
+            try:
+                msg = client.messages.create(
+                    model=MODEL_FAST,
+                    max_tokens=200,
+                    system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
+                    messages=[{"role": "user", "content": src}],
+                )
+                run.ai("translate", MODEL_FAST, msg.usage)
+                es, _ = scrub_names("".join(b.text for b in msg.content if b.type == "text").strip())
+                if es:
+                    db().table("ap_events").update({"summary_es": es}).eq("id", r["id"]).execute()
+                    run.items_out += 1
+            except Exception as e:
+                print(f"translate: skipping event {r['id']}: {e}")
 
 
 if __name__ == "__main__":
