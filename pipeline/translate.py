@@ -24,6 +24,10 @@ def main(limit: int):
         for r in rows:
             run.items_in += 1
             src, _ = scrub_names(r["summary"])
+            if not src or not src.strip():
+                # Nothing to translate: mark with "" so it isn't picked again (the site falls back to English).
+                db().table("ap_events").update({"summary_es": ""}).eq("id", r["id"]).execute()
+                continue
             msg = client.messages.create(
                 model=MODEL_FAST,
                 max_tokens=200,
