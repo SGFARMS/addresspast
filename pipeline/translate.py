@@ -24,6 +24,10 @@ def main(limit: int):
         for r in rows:
             run.items_in += 1
             src, _ = scrub_names(r["summary"])
+            if not src or not src.strip():
+                # Nothing to translate; the API rejects empty messages. Mark with "" so it is not re-picked nightly.
+                db().table("ap_events").update({"summary_es": ""}).eq("id", r["id"]).execute()
+                continue
             msg = client.messages.create(
                 model=MODEL_FAST,
                 max_tokens=200,
